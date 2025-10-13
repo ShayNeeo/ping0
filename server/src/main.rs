@@ -1,5 +1,5 @@
 use axum::routing::{get, post};
-use axum::{Router, Json, extract::State};
+use axum::{Router, Json};
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 use tower_http::cors::{CorsLayer, Any};
@@ -7,7 +7,6 @@ use axum::http::{Method, HeaderValue};
 use axum::routing::get_service;
 use axum::http::StatusCode;
 use serde_json::json;
-use std::sync::Arc;
 use rusqlite::Connection;
 
 mod handlers;

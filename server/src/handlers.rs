@@ -7,9 +7,7 @@ use qrcode::render::svg::Color;
 use qrcode::QrCode;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
-use std::fs as stdfs;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use tokio::fs;
 use uuid::Uuid;
 use askama::Template;
@@ -149,7 +147,7 @@ pub async fn index_handler() -> Html<String> { Html(IndexTemplate.render().unwra
 #[derive(Deserialize)]
 pub struct SubmitForm { pub link: Option<String>, pub qr: Option<String> }
 
-pub async fn submit_handler(State(state): State<AppState>, mut multipart: Multipart) -> impl IntoResponse {
+pub async fn submit_handler(State(state): State<AppState>, mut multipart: Multipart) -> axum::response::Response {
     // Try to parse multipart fields manually to support both link and file in one form
     let mut link_value: Option<String> = None;
     let mut file_bytes: Option<(String, Vec<u8>)> = None;
@@ -174,14 +172,14 @@ pub async fn submit_handler(State(state): State<AppState>, mut multipart: Multip
     // If file present, prioritize file upload mapping
     if let Some((filename, data)) = file_bytes {
         let ext = Path::new(&filename).extension().and_then(|e| e.to_str()).unwrap_or("bin");
-        if !is_allowed_extension(ext) { return (StatusCode::BAD_REQUEST, "File type not allowed".to_string()); }
-        if data.len() > MAX_FILE_SIZE { return (StatusCode::PAYLOAD_TOO_LARGE, "File too large".to_string()); }
+        if !is_allowed_extension(ext) { return (StatusCode::BAD_REQUEST, "File type not allowed".to_string()).into_response(); }
+        if data.len() > MAX_FILE_SIZE { return (StatusCode::PAYLOAD_TOO_LARGE, "File too large".to_string()).into_response(); }
 
         let id = Uuid::new_v4();
         let filename_saved = format!("{}.{}", id, ext);
         let path = format!("uploads/{}", filename_saved);
-        if let Err(e) = fs::create_dir_all("uploads").await { tracing::error!("create uploads dir: {}", e); return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create uploads directory".to_string()); }
-        if let Err(e) = fs::write(&path, &data).await { tracing::error!("save file: {}", e); return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to save file".to_string()); }
+        if let Err(e) = fs::create_dir_all("uploads").await { tracing::error!("create uploads dir: {}", e); return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to create uploads directory".to_string()).into_response(); }
+        if let Err(e) = fs::write(&path, &data).await { tracing::error!("save file: {}", e); return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to save file".to_string()).into_response(); }
 
         let short_code = nanoid!(8);
         let original = format!("file:{}", filename_saved);
@@ -193,7 +191,7 @@ pub async fn submit_handler(State(state): State<AppState>, mut multipart: Multip
 
     // Else if link provided, validate and create mapping
     if let Some(link) = link_value {
-        if !link.starts_with("http://") && !link.starts_with("https://") { return (StatusCode::BAD_REQUEST, "Invalid URL format".to_string()); }
+        if !link.starts_with("http://") && !link.starts_with("https://") { return (StatusCode::BAD_REQUEST, "Invalid URL format".to_string()).into_response(); }
         let short_code = nanoid!(8);
         let conn = Connection::open(&state.db_path).unwrap();
         conn.execute("INSERT INTO items(code, kind, value, created_at) VALUES (?1, ?2, ?3, strftime('%s','now'))", params![short_code, "url", link]).ok();
@@ -201,7 +199,7 @@ pub async fn submit_handler(State(state): State<AppState>, mut multipart: Multip
         return Redirect::to(&redirect_to).into_response();
     }
 
-    (StatusCode::BAD_REQUEST, "Provide a URL or a file".to_string())
+    (StatusCode::BAD_REQUEST, "Provide a URL or a file".to_string()).into_response()
 }
 
 pub async fn result_handler(State(state): State<AppState>, AxumPath(code): AxumPath<String>, Query(q): Query<std::collections::HashMap<String,String>>) -> Html<String> {
@@ -217,7 +215,7 @@ pub async fn result_handler(State(state): State<AppState>, AxumPath(code): AxumP
     Html(tpl.render().unwrap_or_else(|_| "Template error".to_string()))
 }
 
-pub async fn short_handler(State(state): State<AppState>, AxumPath(code): AxumPath<String>) -> impl IntoResponse {
+pub async fn short_handler(State(state): State<AppState>, AxumPath(code): AxumPath<String>) -> axum::response::Response {
     let conn = Connection::open(&state.db_path).unwrap();
     let mut stmt = conn.prepare("SELECT kind, value FROM items WHERE code = ?1").unwrap();
     let row = stmt.query_row(params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)));
