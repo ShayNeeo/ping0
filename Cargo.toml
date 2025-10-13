@@ -4,6 +4,3 @@ members = [
   "app"
 ]
 resolver = "2"
-
-[patch.crates-io]
-axum = { version = "0.6.20" }
