@@ -60,13 +60,13 @@ pub fn App(cx: Scope) -> impl IntoView {
     #[cfg(feature = "csr")]
     let upload_form = {
         view! { cx,
-            <ActionForm action=upload_action>
+            <form action="/upload" method="post" enctype="multipart/form-data">
                 <label>
                     "Upload Image: "
                     <input type="file" name="file"/>
                 </label>
                 <input type="submit" value="Upload"/>
-            </ActionForm>
+            </form>
         }.into_view(cx)
     };
 
@@ -76,13 +76,13 @@ pub fn App(cx: Scope) -> impl IntoView {
     #[cfg(feature = "csr")]
     let link_form = {
         view! { cx,
-            <ActionForm action=link_action>
+            <form action="/link" method="post">
                 <label>
                     "Link: "
                     <input type="text" name="link" on:input=move |ev| set_link_input.set(event_target_value(&ev))/>
                 </label>
                 <input type="submit" value="Generate QR"/>
-            </ActionForm>
+            </form>
         }.into_view(cx)
     };
 
