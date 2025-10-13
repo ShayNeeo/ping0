@@ -12,18 +12,8 @@ ADD https://api.github.com/repos/ShayNeeo/ping0/git/refs/heads/main /tmp/git-ref
 # Fetch the repository contents for online builds.
 RUN git clone --branch ${GIT_REF} --depth 1 ${REPO_URL} .
 
-# Install wasm32 target
-RUN rustup target add wasm32-unknown-unknown
-
-# Install wasm-bindgen CLI for packaging wasm frontend
-RUN cargo install -f wasm-bindgen-cli
-
 # Build the server (release mode with optimizations)
 RUN cargo build --release --package ping0-server
-
-# Build the frontend
-RUN cargo build --release --package ping0-app --target wasm32-unknown-unknown
-RUN wasm-bindgen --out-dir ./pkg --target web ./target/wasm32-unknown-unknown/release/ping0_app.wasm
 
 # Production stage - use minimal base image
 FROM debian:bullseye-slim
@@ -40,7 +30,7 @@ WORKDIR /app
 
 # Copy binaries and assets from builder
 COPY --from=builder /app/target/release/ping0-server /app/ping0-server
-COPY --from=builder /app/pkg /app/pkg
+COPY --from=builder /app/static /app/pkg
 
 # Create uploads directory with proper permissions
 RUN mkdir -p /app/uploads && \
@@ -50,10 +40,10 @@ RUN mkdir -p /app/uploads && \
 USER ping0user
 
 # Set environment variables with defaults
-ENV PORT=8080 \
-    HOST=0.0.0.0 \
-    BASE_URL=https://0.id.vn \
-    RUST_LOG=info
+ENV PORT=8080
+ENV HOST=0.0.0.0
+ENV BASE_URL=https://0.id.vn
+ENV RUST_LOG=info
 
 # Expose the port
 EXPOSE 8080
