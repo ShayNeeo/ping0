@@ -206,7 +206,7 @@ pub async fn result_handler(State(state): State<AppState>, AxumPath(code): AxumP
     let conn = Connection::open(&state.db_path).unwrap();
     let mut stmt = conn.prepare("SELECT kind, value FROM items WHERE code = ?1").unwrap();
     let row = stmt.query_row(params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)));
-    let (kind, value) = match row { Ok(v) => v, Err(_) => return Html("<h1>Not found</h1>".to_string()) };
+    let (_kind, _value) = match row { Ok(v) => v, Err(_) => return Html("<h1>Not found</h1>".to_string()) };
     let short_link = format!("{}/s/{}", state.base_url, code);
     let qr_svg = if q.get("qr").map(|v| v=="1").unwrap_or(false) {
         QrCode::new(short_link.as_bytes()).map(|c| c.render::<Color>().min_dimensions(200,200).build()).unwrap_or_default()
@@ -216,10 +216,13 @@ pub async fn result_handler(State(state): State<AppState>, AxumPath(code): AxumP
 }
 
 pub async fn short_handler(State(state): State<AppState>, AxumPath(code): AxumPath<String>) -> axum::response::Response {
-    let conn = Connection::open(&state.db_path).unwrap();
-    let mut stmt = conn.prepare("SELECT kind, value FROM items WHERE code = ?1").unwrap();
-    let row = stmt.query_row(params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)));
-    let (kind, value) = match row { Ok(v) => v, Err(_) => return (StatusCode::NOT_FOUND, "Not found").into_response() };
+    // Query DB in a separate scope so non-Send types are dropped before any await
+    let (kind, value) = {
+        let conn = Connection::open(&state.db_path).unwrap();
+        let mut stmt = conn.prepare("SELECT kind, value FROM items WHERE code = ?1").unwrap();
+        let row = stmt.query_row(params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)));
+        match row { Ok(v) => v, Err(_) => return (StatusCode::NOT_FOUND, "Not found").into_response() }
+    };
 
     match kind.as_str() {
         "url" => Redirect::permanent(&value).into_response(),
