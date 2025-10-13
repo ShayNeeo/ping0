@@ -36,21 +36,52 @@ COPY --from=builder /app/static /app/pkg
 RUN mkdir -p /app/uploads && \
     chown -R ping0user:ping0user /app
 
+# Create a wrapper script to configure environment dynamically
+RUN cat <<'EOF' > /app/start.sh
+#!/bin/sh
+set -e
+
+# Set defaults if not provided
+export PORT="${PORT:-8080}"
+export HOST="${HOST:-0.0.0.0}"
+export RUST_LOG="${RUST_LOG:-info}"
+
+# Auto-configure BASE_URL if not set
+if [ -z "$BASE_URL" ]; then
+    export BASE_URL="http://127.0.0.1:${PORT}"
+    echo "▶ Auto-configured BASE_URL: $BASE_URL"
+else
+    echo "▶ Using provided BASE_URL: $BASE_URL"
+fi
+
+echo "▶ Server configuration:"
+echo "  - PORT: $PORT"
+echo "  - HOST: $HOST"
+echo "  - BASE_URL: $BASE_URL"
+echo "  - RUST_LOG: $RUST_LOG"
+echo "▶ Starting ping0-server..."
+
+# Start the server
+exec /app/ping0-server
+EOF
+
+RUN chmod +x /app/start.sh
+
 # Switch to non-root user
 USER ping0user
 
-# Set environment variables with defaults
+# Set default environment variables (all can be overridden at runtime)
 ENV PORT=8080
 ENV HOST=0.0.0.0
-ENV BASE_URL=https://0.id.vn
 ENV RUST_LOG=info
+# BASE_URL will be auto-configured by start.sh if not provided
 
-# Expose the port
+# Expose default (actual runtime port can be overridden by $PORT)
 EXPOSE 8080
 
-# Add health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8080/health || exit 1
+# Healthcheck: ensure server answers locally on 127.0.0.1
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD curl -f "http://127.0.0.1:${PORT:-8080}/health" || exit 1
 
-# Run the server
-CMD ["./ping0-server"]
+# Run the server via wrapper script
+CMD ["/app/start.sh"]
