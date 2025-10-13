@@ -89,7 +89,13 @@ pub async fn upload_handler(State(state): State<AppState>, mut multipart: Multip
 
             let short_link = format!("{}/s/{}", state.base_url, short_code);
             let qr_svg = QrCode::new(short_link.as_bytes())
-                .map(|c| c.render::<Color>().min_dimensions(200, 200).build())
+                .map(|c| c
+                    .render::<Color>()
+                    .min_dimensions(320, 320)
+                    .quiet_zone(true)
+                    .dark_color(Color("#000000"))
+                    .light_color(Color("#ffffff"))
+                    .build())
                 .unwrap_or_default();
 
             let body = format!(
@@ -127,7 +133,13 @@ pub async fn link_handler(State(state): State<AppState>, Form(req): Form<LinkReq
     let short_link = format!("{}/s/{}", state.base_url, short_code);
     let qr_svg = if matches!(req.qr.as_deref(), Some("on")) {
         QrCode::new(short_link.as_bytes())
-            .map(|c| c.render::<Color>().min_dimensions(200, 200).build())
+            .map(|c| c
+                .render::<Color>()
+                .min_dimensions(320, 320)
+                .quiet_zone(true)
+                .dark_color(Color("#000000"))
+                .light_color(Color("#ffffff"))
+                .build())
             .unwrap_or_default()
     } else {
         String::new()
@@ -210,7 +222,15 @@ pub async fn result_handler(State(state): State<AppState>, AxumPath(code): AxumP
     let (_kind, _value) = match row { Ok(v) => v, Err(_) => return Html("<h1>Not found</h1>".to_string()) };
     let short_link = format!("{}/s/{}", state.base_url, code);
     let qr_svg = if q.get("qr").map(|v| v=="1").unwrap_or(false) {
-        QrCode::new(short_link.as_bytes()).map(|c| c.render::<Color>().min_dimensions(200,200).build()).unwrap_or_default()
+        QrCode::new(short_link.as_bytes())
+            .map(|c| c
+                .render::<Color>()
+                .min_dimensions(320,320)
+                .quiet_zone(true)
+                .dark_color(Color("#000000"))
+                .light_color(Color("#ffffff"))
+                .build())
+            .unwrap_or_default()
     } else { String::new() };
     let tpl = ResultTemplate { code, short_link, qr_svg: if qr_svg.is_empty() { None } else { Some(qr_svg) } };
     Html(tpl.render().unwrap_or_else(|_| "Template error".to_string()))
@@ -300,8 +320,13 @@ pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart)
         let qr_code_data = if qr_required {
             match QrCode::new(short_url.as_bytes()) {
                 Ok(c) => {
-                    // Render PNG bytes then base64
-                    let image = c.render::<qrcode::render::svg::Color>().min_dimensions(200,200).build();
+                    let image = c
+                        .render::<qrcode::render::svg::Color>()
+                        .min_dimensions(320,320)
+                        .quiet_zone(true)
+                        .dark_color(Color("#000000"))
+                        .light_color(Color("#ffffff"))
+                        .build();
                     let data_url = format!("data:image/svg+xml;utf8,{}", urlencoding::encode(&image));
                     Some(data_url)
                 }
@@ -324,7 +349,13 @@ pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart)
         let qr_code_data = if qr_required {
             match QrCode::new(short_url.as_bytes()) {
                 Ok(c) => {
-                    let image = c.render::<qrcode::render::svg::Color>().min_dimensions(200,200).build();
+                    let image = c
+                        .render::<qrcode::render::svg::Color>()
+                        .min_dimensions(320,320)
+                        .quiet_zone(true)
+                        .dark_color(Color("#000000"))
+                        .light_color(Color("#ffffff"))
+                        .build();
                     let data_url = format!("data:image/svg+xml;utf8,{}", urlencoding::encode(&image));
                     Some(data_url)
                 }
