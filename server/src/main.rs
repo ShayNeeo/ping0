@@ -66,6 +66,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/submit", post(handlers::submit_handler))
         .route("/upload", post(handlers::upload_handler))
         .route("/link", post(handlers::link_handler))
+        .route("/api/upload", post(handlers::api_upload))
         .route("/r/:code", get(handlers::result_handler))
         .route("/s/:code", get(handlers::short_handler))
         .with_state(app_state)
@@ -73,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
         // Adjust the allowed origin to your Pages domain(s) if different.
         .layer(
             CorsLayer::new()
-                .allow_origin(HeaderValue::from_static("https://0.id.vn"))
+                .allow_origin(Any)
                 .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
                 .allow_headers(Any)
         )

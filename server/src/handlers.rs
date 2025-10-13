@@ -12,6 +12,8 @@ use tokio::fs;
 use uuid::Uuid;
 use askama::Template;
 use ping0::templates::{IndexTemplate, ResultTemplate, ImageOgTemplate};
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as B64;
 
 // Maximum file size: 10MB
 const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
@@ -248,4 +250,90 @@ pub async fn short_handler(State(state): State<AppState>, AxumPath(code): AxumPa
         }
         _ => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
+}
+
+// SPA contract: POST /api/upload (multipart/form-data)
+// fields: content (URL string or file), qr_required ("true"|"false")
+// returns: { success: bool, short_url?: string, qr_code_data?: string|null, error?: string }
+pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart) -> axum::response::Response {
+    let mut link_value: Option<String> = None;
+    let mut file_bytes: Option<(String, Vec<u8>)> = None;
+    let mut qr_required: bool = false;
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let name = field.name().unwrap_or("");
+        match name {
+            "content" => {
+                if let Some(fname) = field.file_name() {
+                    if let Ok(bytes) = field.bytes().await { file_bytes = Some((fname.to_string(), bytes.to_vec())); }
+                } else if let Ok(text) = field.text().await {
+                    if !text.trim().is_empty() { link_value = Some(text.trim().to_string()); }
+                }
+            }
+            "qr_required" => {
+                if let Ok(v) = field.text().await { qr_required = v.trim().eq_ignore_ascii_case("true"); }
+            }
+            _ => {}
+        }
+    }
+
+    // If file provided, create file mapping
+    if let Some((filename, data)) = file_bytes {
+        let ext = Path::new(&filename).extension().and_then(|e| e.to_str()).unwrap_or("bin");
+        if !is_allowed_extension(ext) { return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"success": false, "error": "File type not allowed"}))).into_response(); }
+        if data.len() > MAX_FILE_SIZE { return (StatusCode::PAYLOAD_TOO_LARGE, Json(serde_json::json!({"success": false, "error": "File too large"}))).into_response(); }
+
+        if let Err(e) = fs::create_dir_all("uploads").await { tracing::error!("create uploads dir: {}", e); return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": "Server error"}))).into_response(); }
+
+        let id = Uuid::new_v4();
+        let filename_saved = format!("{}.{}", id, ext);
+        let path = format!("uploads/{}", filename_saved);
+        if let Err(e) = fs::write(&path, &data).await { tracing::error!("save file: {}", e); return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": "Server error"}))).into_response(); }
+
+        let short_code = nanoid!(8);
+        {
+            let conn = Connection::open(&state.db_path).unwrap();
+            let original = format!("file:{}", filename_saved);
+            conn.execute("INSERT INTO items(code, kind, value, created_at) VALUES (?1, ?2, ?3, strftime('%s','now'))", params![short_code, "file", original]).ok();
+        }
+        let short_url = format!("{}/s/{}", state.base_url, short_code);
+
+        let qr_code_data = if qr_required {
+            match QrCode::new(short_url.as_bytes()) {
+                Ok(c) => {
+                    // Render PNG bytes then base64
+                    let image = c.render::<qrcode::render::svg::Color>().min_dimensions(200,200).build();
+                    let data_url = format!("data:image/svg+xml;utf8,{}", urlencoding::encode(&image));
+                    Some(data_url)
+                }
+                Err(_) => None,
+            }
+        } else { None };
+
+        return Json(serde_json::json!({"success": true, "short_url": short_url, "qr_code_data": qr_code_data})).into_response();
+    }
+
+    // Else link
+    if let Some(link) = link_value {
+        if !link.starts_with("http://") && !link.starts_with("https://") { return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"success": false, "error": "Invalid URL"}))).into_response(); }
+        let short_code = nanoid!(8);
+        {
+            let conn = Connection::open(&state.db_path).unwrap();
+            conn.execute("INSERT INTO items(code, kind, value, created_at) VALUES (?1, ?2, ?3, strftime('%s','now'))", params![short_code, "url", link]).ok();
+        }
+        let short_url = format!("{}/s/{}", state.base_url, short_code);
+        let qr_code_data = if qr_required {
+            match QrCode::new(short_url.as_bytes()) {
+                Ok(c) => {
+                    let image = c.render::<qrcode::render::svg::Color>().min_dimensions(200,200).build();
+                    let data_url = format!("data:image/svg+xml;utf8,{}", urlencoding::encode(&image));
+                    Some(data_url)
+                }
+                Err(_) => None,
+            }
+        } else { None };
+        return Json(serde_json::json!({"success": true, "short_url": short_url, "qr_code_data": qr_code_data})).into_response();
+    }
+
+    (StatusCode::BAD_REQUEST, Json(serde_json::json!({"success": false, "error": "Provide content or file"}))).into_response()
 }
