@@ -34,9 +34,11 @@ async fn main() -> anyhow::Result<()> {
     
     let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string());
     
-    // Set base URL for the application
+    // Set base URL for the application (guard against empty env)
     let base_url = std::env::var("BASE_URL")
-        .unwrap_or_else(|_| format!("http://{}:{}", host, port));
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| format!("https://0.id.vn"));
     
     tracing::info!("Base URL: {}", base_url);
 
@@ -56,7 +58,9 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     let base_url = std::env::var("BASE_URL")
-        .unwrap_or_else(|_| format!("http://{}:{}", host, port));
+        .ok()
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| format!("https://0.id.vn"));
 
     let app_state = handlers::AppState { db_path: db_path.clone(), base_url: base_url.clone() };
 
