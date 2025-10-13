@@ -140,8 +140,8 @@ export default function App() {
           <div className="result">
             <div className="row">
               <span className="label-inline">Short URL</span>
-              <a href={result.short_url} className="link" target="_blank" rel="noreferrer">
-                {result.short_url}
+              <a href={toAbsoluteUrl(result.short_url)} className="link" target="_blank" rel="noreferrer">
+                {toAbsoluteUrl(result.short_url)}
               </a>
             </div>
             {result.qr_code_data && (
@@ -160,4 +160,12 @@ function joinUrl(base: string, path: string) {
   if (!base) return path
   if (!path.startsWith('/')) path = '/' + path
   return base.replace(/\/+$/, '') + path
+}
+
+function toAbsoluteUrl(u: string) {
+  try {
+    return new URL(u, window.location.origin).href
+  } catch {
+    return u
+  }
 }
