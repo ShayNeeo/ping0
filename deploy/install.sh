@@ -137,3 +137,39 @@ if command -v nginx >/dev/null 2>&1; then
 fi
 
 echo "Done. To follow logs: sudo journalctl -u ping0 -f"
+
+### Optional: write Cloudflare Origin cert/key if provided via environment or file
+# WARNING: storing private keys in environment or repo is sensitive. Prefer uploading
+# cert/key to the server via scp or using a secrets manager. This helper exists for
+# automation convenience.
+echo "\nChecking for Cloudflare Origin certificate inputs..."
+sudo mkdir -p /etc/ssl/cf_origin
+sudo chmod 700 /etc/ssl/cf_origin
+
+CRT_TARGET="/etc/ssl/cf_origin/${NGINX_SERVER_NAME}.crt"
+KEY_TARGET="/etc/ssl/cf_origin/${NGINX_SERVER_NAME}.key"
+
+if [ -n "${CF_ORIGIN_CERT_FILE:-}" ] && [ -f "$CF_ORIGIN_CERT_FILE" ]; then
+  echo "Copying origin cert from file $CF_ORIGIN_CERT_FILE to $CRT_TARGET"
+  sudo cp -f "$CF_ORIGIN_CERT_FILE" "$CRT_TARGET"
+fi
+if [ -n "${CF_ORIGIN_KEY_FILE:-}" ] && [ -f "$CF_ORIGIN_KEY_FILE" ]; then
+  echo "Copying origin key from file $CF_ORIGIN_KEY_FILE to $KEY_TARGET"
+  sudo cp -f "$CF_ORIGIN_KEY_FILE" "$KEY_TARGET"
+fi
+
+if [ -n "${CF_ORIGIN_CERT:-}" ] && [ ! -f "$CRT_TARGET" ]; then
+  echo "Writing origin cert from CF_ORIGIN_CERT env var to $CRT_TARGET"
+  printf '%s' "$CF_ORIGIN_CERT" | sudo tee "$CRT_TARGET" > /dev/null
+fi
+if [ -n "${CF_ORIGIN_KEY:-}" ] && [ ! -f "$KEY_TARGET" ]; then
+  echo "Writing origin key from CF_ORIGIN_KEY env var to $KEY_TARGET"
+  printf '%s' "$CF_ORIGIN_KEY" | sudo tee "$KEY_TARGET" > /dev/null
+fi
+
+if [ -f "$KEY_TARGET" ] || [ -f "$CRT_TARGET" ]; then
+  sudo chown root:root /etc/ssl/cf_origin/*
+  sudo chmod 600 "$KEY_TARGET" || true
+  sudo chmod 644 "$CRT_TARGET" || true
+  echo "Origin cert/key present at /etc/ssl/cf_origin/"
+fi
