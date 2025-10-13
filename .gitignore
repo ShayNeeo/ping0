@@ -12,3 +12,9 @@ Cargo.lock
 .vscode
 .DEPLOY_VPS.md
 .DEPLOY_FRONTEND.md
+/webpage
+
+# Frontend (Vite)
+/frontend/node_modules
+/frontend/dist
+/frontend/.env

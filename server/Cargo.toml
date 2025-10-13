@@ -1,5 +1,5 @@
 [package]
-name = "ping0-server"
+name = "ping0"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,3 +14,7 @@ anyhow = "1.0"
 tower-http = { version = "0.3", features = ["fs", "cors"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+askama = "0.12"
+rusqlite = { version = "0.30" }
+nanoid = "0.4"
+mime_guess = "2.0"

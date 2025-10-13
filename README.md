@@ -1,167 +1,128 @@
-# ping0 — Fast file & link sharing with QR
+# ping0 — Full-Stack Rust link & file sharer (no JS)
 
-This README is written for users and operators who want to run the ping0 service. It explains how to deploy the backend on a Debian VPS, how to host the frontend on Cloudflare Pages, and the minimal operational steps: start, stop, check status, and upgrade.
+Minimal, monochrome web app that lets you paste a URL or upload a file, producing a short link `0.id.vn/s/<code>` and optionally a QR code. Implemented entirely in Rust using `axum` + `askama` + `rusqlite`.
 
-If you are a developer looking for build internals, the repository contains a developer README and build scripts — this file focuses on deploying and running the service in production.
+### Features
+- Short links for URLs and uploaded files
+- Optional QR on result page
+- For images, `GET /s/<code>` returns an HTML page with Open Graph `og:image` so chat apps show previews (not a redirect)
+- Direct file serving under `/files/<filename>`
 
-Contents
-- Quick start (VPS)
-- Cloudflare Pages (frontend)
-- Systemd service (backend)
-- Nginx and TLS
-- Configuration and runtime files
-- Backups, logs, and monitoring
-- Troubleshooting
-- Next steps and resources
+---
 
-## Quick start (one VPS, Debian / Debian Sid)
+## 1) Setup on a VPS (Debian/Ubuntu)
 
-This section assumes you have a Debian-based VPS and SSH access with sudo.
-
-1) Clone the repository under `/opt/ping0/repo` (recommended location):
+Run these on a fresh Debian/Ubuntu VPS with sudo access.
 
 ```bash
-sudo mkdir -p /opt/ping0
-sudo chown $USER:$USER /opt/ping0
-cd /opt/ping0
-git clone https://github.com/ShayNeeo/ping0.git repo
-cd repo
+sudo apt update
+sudo apt install -y build-essential pkg-config libsqlite3-dev curl
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source $HOME/.cargo/env
 ```
 
-2) Run the automated installer. It will:
-- install system packages (Debian/apt)
-- create a system user `ping0`
-- install rustup (if needed) and the Rust toolchain for building
-- build and install the backend binary to `/opt/ping0/ping0-server`
-- create upload directories and set permissions
-- write a basic nginx site and enable it (optional)
-
-Run:
-```bash
-# set NGINX_SERVER_NAME if you want nginx configured; optional.
-sudo NGINX_SERVER_NAME=api.0.id.vn ./deploy/install.sh
-```
-
-Notes:
-- The script supports installing Cloudflare Origin certificates during the run using these env vars or file paths:
-  - `CF_ORIGIN_CERT` (PEM text) or `CF_ORIGIN_CERT_FILE` (path)
-  - `CF_ORIGIN_KEY` (PEM text) or `CF_ORIGIN_KEY_FILE` (path)
-- It's recommended to upload certs via `scp` and use `CF_ORIGIN_CERT_FILE` / `CF_ORIGIN_KEY_FILE` rather than embedding keys in env vars.
-```
-sudo scp cloudflare-origin.crt root@server:/root/
-sudo scp cloudflare-origin.key root@server:/root/
-sudo CF_ORIGIN_CERT_FILE=/root/cloudflare-origin.crt CF_ORIGIN_KEY_FILE=/root/cloudflare-origin.key NGINX_SERVER_NAME=api.0.id.vn ./deploy/install.sh
-```
-
-## Cloudflare Pages (frontend)
-
-The frontend in this repo is a static site under `static/`. We recommend hosting it on Cloudflare Pages and the backend on your VPS.
-
-- The frontend reads `/config.json` at runtime to know the API base URL. Create `static/config.json` with:
-
-```json
-{
-  "apiBase": "https://api.0.id.vn"
-}
-```
-
-- Deploy options:
-  - Manual: drag & drop the `static/` folder in the Pages UI.
-  - Git-based: connect your repository and set the build output directory to `static`.
-  - Wrangler CLI: `wrangler pages publish static --project-name=ping0-frontend`.
-
-- If you prefer to have frontend + backend on the same origin, configure nginx on your VPS to serve the static files and proxy API routes (example in the Nginx section).
-
-## Systemd service (backend)
-
-The installer creates a systemd unit at `/etc/systemd/system/ping0.service`. Useful commands:
+Clone and build:
 
 ```bash
-sudo systemctl start ping0
-sudo systemctl stop ping0
-sudo systemctl restart ping0
-sudo systemctl status ping0 -l
-sudo journalctl -u ping0 -f
+git clone https://github.com/ShayNeeo/ping0.git
+cd ping0
+cargo build --release
 ```
 
-Health endpoint: `GET /health` returns a small JSON payload. Example:
-```bash
-curl -v https://api.0.id.vn/health
-```
+Binary path: `server/target/release/ping0` (workspace member `server` named `ping0`).
 
-If the service fails to start, check permissions on `/opt/ping0` and `/var/lib/ping0/uploads` and ensure the `ping0` user can traverse and write to required directories.
-
-## Nginx and TLS
-
-The installer writes a simple site to `/etc/nginx/sites-available/ping0` and symlinks it to `sites-enabled`. The default config:
-- redirects HTTP->HTTPS
-- proxies `/` to `http://127.0.0.1:8080`
-- enforces `client_max_body_size 12M` (the server enforces 10MB as well)
-
-TLS options:
-- Recommended: Use Cloudflare in proxy mode and install a Cloudflare Origin Certificate on the VPS. Place cert and key at `/etc/ssl/cf_origin/<domain>.crt` and `.key` (the installer can write them if you provide env vars or file paths).
-- Alternate: Use certbot/Let's Encrypt. If Cloudflare is proxied, set DNS to gray cloud while obtaining certs.
-
-After editing nginx config, test and reload:
+Create runtime dirs:
 
 ```bash
-sudo nginx -t
-sudo systemctl reload nginx
+mkdir -p server/uploads server/data
 ```
 
-## Configuration and runtime files
+## 2) Configuration
 
-- `/etc/default/ping0`: environment file used by systemd. Example variables:
-  - PORT=8080
-  - HOST=0.0.0.0
-  - BASE_URL=
-  - UPLOAD_DIR=/var/lib/ping0/uploads
-  - MAX_BODY=10485760
+You can configure via environment variables:
 
-- `/var/lib/ping0/uploads`: file uploads (make sure this directory is owned by `ping0` and backed up as needed).
+- `HOST` (default `0.0.0.0`)
+- `PORT` (default `8080`)
+- `BASE_URL` (default `http://<HOST>:<PORT>`, set to `https://0.id.vn` in prod)
+- `DATABASE_PATH` (default `server/data/ping0.db` if you run from repo root; otherwise set an absolute path)
 
-## Backups, logs, and monitoring
-
-- Backups: copy `/var/lib/ping0/uploads` to a backup location regularly (rsync, cron, or object storage).
-- Logs: use `journalctl -u ping0` or forward logs to a central service.
-- Health checks: point your monitoring (UptimeRobot, healthchecks.io) at `https://api.0.id.vn/health`.
-
-## Troubleshooting
-
-- CHDIR / permission errors: ensure `/opt/ping0` is `root:ping0` with `750` permissions and binary is `root:ping0` `750`.
-- 405 on `/link` when using Pages: ensure `static/config.json` exists and `apiBase` points to `https://api.0.id.vn` so the frontend posts to the backend origin.
-- CORS errors: if frontend and backend are different origins, enable CORS on the backend or proxy API through the same origin.
-- Docker builds: the repo has Dockerfile(s) for containerized builds — see the top-level Dockerfile if you prefer building images.
-
-## Upgrading
-
-To update the backend binary on the VPS:
-
-1. In the repo on the VPS: pull latest changes and run installer again (it will build and install):
-```bash
-cd /opt/ping0/repo
-git pull origin main
-sudo ./deploy/install.sh
-```
-
-2. Alternatively, build locally and copy the release binary to `/opt/ping0/ping0-server`, then restart systemd.
-
-## Security notes
-
-- Never commit private keys to the repo. Use the installer to copy keys via secure channel.
-- Restrict origin access to Cloudflare IP ranges if you use Cloudflare proxying.
-- Run regular OS updates and monitor open ports.
-
-## Need help?
-
-If something fails, collect and share these outputs when asking for help:
+Example (production):
 
 ```bash
-sudo systemctl status ping0 -l
-sudo journalctl -u ping0 -n 200 --no-pager -o cat
-sudo nginx -t
-sudo tail -n 200 /var/log/nginx/error.log
-sudo ls -la /opt/ping0 /var/lib/ping0
+export HOST=0.0.0.0
+export PORT=8080
+export BASE_URL=https://0.id.vn
+export DATABASE_PATH=/var/lib/ping0/ping0.db
 ```
 
-Happy running!
+## 3) Run
+
+From repo root:
+
+```bash
+./server/target/release/ping0
+```
+
+Or from `server/` directory after build:
+
+```bash
+cd server
+./target/release/ping0
+```
+
+Open in browser: `https://0.id.vn` once DNS/HTTPS is set. Locally: `http://127.0.0.1:8080`.
+
+## 4) Usage
+
+- Home `GET /`: form with URL field, file input, and "Generate QR Code" checkbox.
+- Submit `POST /submit` (multipart). The app stores either the file or URL, creates a short code, and redirects to `/r/<code>`.
+- Result `GET /r/<code>`: shows the short link `0.id.vn/s/<code>`, and if requested, an inline QR SVG.
+- Short redirect `GET /s/<code>`:
+  - If short maps to a URL: 301 redirect to target URL.
+  - If short maps to a file and it is an image: returns HTML with `og:image` pointing to `/files/<file>` and an inline `<img>` for previews.
+  - If short maps to a non-image file: serves file bytes directly.
+
+## 5) Notes
+
+- Max file size: 10 MB (configurable at compile time within the code constant).
+- Allowed extensions: `jpg,jpeg,png,gif,webp,pdf,txt`.
+- No JavaScript used; all HTML rendered server-side via `askama`.
+
+---
+
+## Production hardening (optional)
+
+- Put behind Nginx/Caddy and terminate TLS; set `BASE_URL=https://0.id.vn`.
+- Run as a dedicated user; place uploads and DB under `/var/lib/ping0/` with restricted permissions.
+- Use a process manager (systemd):
+
+```ini
+[Unit]
+Description=ping0
+After=network.target
+
+[Service]
+Environment=HOST=0.0.0.0
+Environment=PORT=8080
+Environment=BASE_URL=https://0.id.vn
+Environment=DATABASE_PATH=/var/lib/ping0/ping0.db
+WorkingDirectory=/opt/ping0
+ExecStart=/opt/ping0/ping0
+User=ping0
+Group=ping0
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+---
+
+## Build & Run (recap)
+
+- Build: `cargo build --release`
+- Run: `./server/target/release/ping0`
+
+---
+
+License: MIT

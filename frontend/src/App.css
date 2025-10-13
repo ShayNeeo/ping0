@@ -1,0 +1,115 @@
+/* Monochrome, old-school 80s/90s vibe */
+:root {
+  --bg: #ffffff;
+  --fg: #000000;
+  --border: #000000;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'Courier New', Courier, monospace;
+}
+
+.app {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.container {
+  width: 100%;
+  max-width: 640px;
+  border: 2px solid var(--border);
+  padding: 1.5rem;
+}
+
+h1 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.75rem;
+}
+
+.subtitle {
+  margin: 0 0 1.25rem 0;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.input {
+  padding: 0.5rem;
+  border: 2px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  user-select: none;
+}
+
+.button {
+  appearance: none;
+  background: var(--bg);
+  color: var(--fg);
+  border: 2px solid var(--border);
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+.button:disabled { opacity: 0.6; cursor: default; }
+
+.or {
+  text-align: center;
+  margin: 0.25rem 0;
+}
+
+.status {
+  margin-top: 1rem;
+}
+
+.error {
+  margin-top: 1rem;
+  border: 2px solid var(--border);
+  padding: 0.75rem;
+}
+
+.result {
+  margin-top: 1rem;
+  border: 2px solid var(--border);
+  padding: 0.75rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.label-inline {
+  min-width: 6rem;
+}
+
+.link {
+  color: var(--fg);
+  text-decoration: underline;
+  word-break: break-all;
+}
+
+.qr { margin-top: 0.75rem; }
+.qr img { max-width: 240px; width: 100%; height: auto; }

@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Small deploy helper: build release, copy binary to /opt/ping0, set ownership, restart systemd
-# Usage: sudo ./deploy/install.sh   (script will use sudo for operations when needed)
+# Idempotent installer for ping0. It will:
+# - Install required packages (Debian/Ubuntu)
+# - Create system user and runtime dirs
+# - Ensure Rust toolchain for the repo owner
+# - Build release binary
+# - Install to /opt/ping0/ping0
+# - Write systemd unit and enable service
+# - Optionally configure nginx and Cloudflare Origin certs
+# Usage: sudo ./deploy/install.sh
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 echo "Repo root: $ROOT_DIR"
@@ -20,8 +27,7 @@ if [ -f /etc/debian_version ]; then
   echo "Detected Debian-based OS. Installing system packages via apt..."
   sudo apt-get update
   sudo apt-get install -y --no-install-recommends \
-    build-essential pkg-config libssl-dev ca-certificates curl git nginx ufw python3 \
-    libclang-dev || true
+    build-essential pkg-config libsqlite3-dev ca-certificates curl git nginx ufw || true
 else
   echo "Non-Debian OS detected (or /etc/debian_version missing). Skipping package install step."
 fi
@@ -32,51 +38,84 @@ if ! id -u ping0 >/dev/null 2>&1; then
   sudo useradd --system --create-home --home-dir /opt/ping0 --shell /usr/sbin/nologin ping0 || true
 fi
 
-# Ensure rustup/cargo is available for the repo owner; install rustup and nightly if missing
+# Ensure rustup/cargo is available for the repo owner; install rustup if missing
 if ! sudo -u "$REPO_OWNER" -H bash -lc 'command -v cargo >/dev/null 2>&1'; then
   echo "Installing rustup for user $REPO_OWNER"
   sudo -u "$REPO_OWNER" -H bash -lc 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
-  # ensure cargo is available for subsequent commands in this script run
-  sudo -u "$REPO_OWNER" -H bash -lc 'export PATH="$HOME/.cargo/bin:$PATH"; rustup toolchain install nightly'
 fi
 
 echo "Building release (as user: $REPO_OWNER)"
-export PATH="/home/$REPO_OWNER/.cargo/bin:$PATH"
-
-if [ "$(id -u)" -eq 0 ]; then
-  # if running as root, drop to repo owner if possible
-  if [ "$REPO_OWNER" != "root" ]; then
-    sudo -u "$REPO_OWNER" -H bash -c "cd '$ROOT_DIR' && cargo build --release"
-  else
-    (cd "$ROOT_DIR" && cargo build --release)
-  fi
+if [ "$(id -u)" -eq 0 ] && [ "$REPO_OWNER" != "root" ]; then
+  sudo -u "$REPO_OWNER" -H bash -lc "export PATH=\"\$HOME/.cargo/bin:\$PATH\"; cd '$ROOT_DIR' && cargo build --release"
 else
   (cd "$ROOT_DIR" && cargo build --release)
 fi
 
-BIN_PATH="$ROOT_DIR/target/release/ping0-server"
+BIN_PATH="$ROOT_DIR/target/release/ping0"
+if [ ! -f "$BIN_PATH" ] && [ -f "$ROOT_DIR/server/target/release/ping0" ]; then
+  BIN_PATH="$ROOT_DIR/server/target/release/ping0"
+fi
 if [ ! -f "$BIN_PATH" ]; then
-  echo "ERROR: build failed, binary not found at $BIN_PATH" >&2
+  echo "ERROR: build failed, binary not found (looked in target paths)" >&2
   exit 2
 fi
 
-echo "Installing binary to /opt/ping0/ping0-server"
+echo "Installing binary to /opt/ping0/ping0"
 sudo mkdir -p /opt/ping0
-sudo cp -f "$BIN_PATH" /opt/ping0/ping0-server
+sudo cp -f "$BIN_PATH" /opt/ping0/ping0
 # Ensure the directory and binary are owned so the `ping0` user can execute
 sudo chown root:ping0 /opt/ping0
 sudo chmod 750 /opt/ping0
-sudo chown root:ping0 /opt/ping0/ping0-server || true
-sudo chmod 750 /opt/ping0/ping0-server
+sudo chown root:ping0 /opt/ping0/ping0 || true
+sudo chmod 750 /opt/ping0/ping0
+sudo mkdir -p /opt/ping0/uploads /opt/ping0/data
+sudo chown -R ping0:ping0 /opt/ping0/uploads /opt/ping0/data
+sudo chmod 750 /opt/ping0/uploads /opt/ping0/data
 
-echo "Ensuring upload dir ownership"
-sudo mkdir -p /var/lib/ping0/uploads
-sudo chown -R ping0:ping0 /var/lib/ping0 || true
-sudo chmod 750 /var/lib/ping0 || true
+echo "Ensuring runtime dirs exist"
+sudo mkdir -p /etc/ssl/cf_origin
+sudo chmod 700 /etc/ssl/cf_origin
+
+# Write default env file for systemd
+if [ ! -f /etc/default/ping0 ]; then
+  echo "Writing /etc/default/ping0"
+  sudo tee /etc/default/ping0 > /dev/null <<ENVV
+HOST=0.0.0.0
+PORT=8080
+BASE_URL=https://0.id.vn
+DATABASE_PATH=/opt/ping0/data/ping0.db
+ENVV
+fi
+
+# Systemd unit
+echo "Writing systemd unit /etc/systemd/system/ping0.service"
+sudo tee /etc/systemd/system/ping0.service > /dev/null <<'UNIT'
+[Unit]
+Description=ping0 - Rust link & file sharer
+After=network.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/ping0
+WorkingDirectory=/opt/ping0
+ExecStart=/opt/ping0/ping0
+User=ping0
+Group=ping0
+Restart=always
+RestartSec=2
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+echo "Reloading systemd and enabling service"
+sudo systemctl daemon-reload
+sudo systemctl enable ping0 || true
 
 ### Nginx site setup (optional)
 # You can override the server name by passing NGINX_SERVER_NAME environment variable.
-NGINX_SERVER_NAME=${NGINX_SERVER_NAME:-api.0.id.vn}
+NGINX_SERVER_NAME=${NGINX_SERVER_NAME:-0.id.vn}
 NGINX_SITE_PATH="/etc/nginx/sites-available/ping0"
 
 echo "Generating nginx site config for $NGINX_SERVER_NAME"
@@ -126,9 +165,12 @@ fi
 echo "Testing nginx configuration"
 sudo nginx -t || true
 
-echo "Reloading systemd and restarting ping0 service"
-sudo systemctl daemon-reload
-sudo systemctl restart ping0
+if command -v ufw >/dev/null 2>&1; then
+  sudo ufw allow 'Nginx Full' || true
+fi
+
+echo "Starting (or restarting) ping0 service"
+sudo systemctl restart ping0 || sudo systemctl start ping0
 sudo systemctl status ping0 --no-pager -l || true
 
 echo "Reloading nginx (if installed)"
