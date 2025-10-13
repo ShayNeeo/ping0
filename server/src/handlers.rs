@@ -32,6 +32,14 @@ fn is_allowed_extension(ext: &str) -> bool {
     ALLOWED_EXTENSIONS.iter().any(|&allowed| allowed.eq_ignore_ascii_case(ext))
 }
 
+fn ensure_absolute(base: &str, url: &str) -> String {
+    if url.starts_with("http://") || url.starts_with("https://") {
+        url.to_string()
+    } else {
+        format!("{}/{}", base.trim_end_matches('/'), url.trim_start_matches('/'))
+    }
+}
+
 pub async fn upload_handler(State(state): State<AppState>, mut multipart: Multipart) -> impl IntoResponse {
     while let Ok(Some(field)) = multipart.next_field().await {
         let name = field.name().unwrap_or("");
@@ -88,7 +96,8 @@ pub async fn upload_handler(State(state): State<AppState>, mut multipart: Multip
             ).ok();
 
             let short_link = format!("{}/s/{}", state.base_url, short_code);
-            let qr_svg = QrCode::new(short_link.as_bytes())
+            let qr_target = ensure_absolute(&state.base_url, &short_link);
+            let qr_svg = QrCode::new(qr_target.as_bytes())
                 .map(|c| c
                     .render::<Color>()
                     .min_dimensions(320, 320)
@@ -132,7 +141,8 @@ pub async fn link_handler(State(state): State<AppState>, Form(req): Form<LinkReq
 
     let short_link = format!("{}/s/{}", state.base_url, short_code);
     let qr_svg = if matches!(req.qr.as_deref(), Some("on")) {
-        QrCode::new(short_link.as_bytes())
+        let qr_target = ensure_absolute(&state.base_url, &short_link);
+        QrCode::new(qr_target.as_bytes())
             .map(|c| c
                 .render::<Color>()
                 .min_dimensions(320, 320)
@@ -222,7 +232,8 @@ pub async fn result_handler(State(state): State<AppState>, AxumPath(code): AxumP
     let (_kind, _value) = match row { Ok(v) => v, Err(_) => return Html("<h1>Not found</h1>".to_string()) };
     let short_link = format!("{}/s/{}", state.base_url, code);
     let qr_svg = if q.get("qr").map(|v| v=="1").unwrap_or(false) {
-        QrCode::new(short_link.as_bytes())
+        let qr_target = ensure_absolute(&state.base_url, &short_link);
+        QrCode::new(qr_target.as_bytes())
             .map(|c| c
                 .render::<Color>()
                 .min_dimensions(320,320)
@@ -318,7 +329,8 @@ pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart)
         let short_url = format!("{}/s/{}", state.base_url, short_code);
 
         let qr_code_data = if qr_required {
-            match QrCode::new(short_url.as_bytes()) {
+            let qr_target = ensure_absolute(&state.base_url, &short_url);
+            match QrCode::new(qr_target.as_bytes()) {
                 Ok(c) => {
                     let image = c
                         .render::<qrcode::render::svg::Color>()
@@ -347,7 +359,8 @@ pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart)
         }
         let short_url = format!("{}/s/{}", state.base_url, short_code);
         let qr_code_data = if qr_required {
-            match QrCode::new(short_url.as_bytes()) {
+            let qr_target = ensure_absolute(&state.base_url, &short_url);
+            match QrCode::new(qr_target.as_bytes()) {
                 Ok(c) => {
                     let image = c
                         .render::<qrcode::render::svg::Color>()
