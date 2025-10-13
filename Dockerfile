@@ -1,8 +1,11 @@
-FROM rustlang/rust:nightly as builder
+# Use the official Rust image for building. Use AS in upper-case to avoid linter warnings.
+FROM rustlang/rust:nightly AS builder
 
 WORKDIR /app
 
-# Pull the repo
+# Copy the current workspace into the image instead of cloning from GitHub.
+# This ensures the image builds from your local changes (so edits to Cargo.toml are used).
+# Pull the repo from GitHub so online builds use the repository contents.
 RUN git clone https://github.com/ShayNeeo/ping0 .
 
 # Install wasm32 target
