@@ -15,5 +15,20 @@ urlencoding = "2.1"
 [features]
 # default to client-side rendering when this crate is built standalone (wasm)
 default = ["csr"]
-csr = ["leptos/csr"]
-ssr = ["leptos/ssr"]
+csr = ["leptos/csr", "leptos/forms"]
+# ssr enables server-only dependencies used by the server functions
+ssr = ["leptos/ssr", "leptos/forms", "tokio", "uuid", "qrcode"]
+
+[dependencies.tokio]
+version = "1"
+features = ["full"]
+optional = true
+
+[dependencies.uuid]
+version = "1"
+features = ["v4"]
+optional = true
+
+[dependencies.qrcode]
+version = "0.12"
+optional = true
