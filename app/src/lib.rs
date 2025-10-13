@@ -14,6 +14,7 @@ pub struct LinkResponse {
     pub qr_svg: String,
 }
 
+#[cfg(feature = "ssr")]
 #[server(UploadFile, "/api")]
 pub async fn upload_file(file: Vec<u8>, filename: String) -> Result<UploadResponse, ServerFnError> {
     use std::path::Path;
@@ -37,6 +38,7 @@ pub async fn upload_file(file: Vec<u8>, filename: String) -> Result<UploadRespon
     })
 }
 
+#[cfg(feature = "ssr")]
 #[server(GenerateQr, "/api")]
 pub async fn generate_qr(link: String) -> Result<LinkResponse, ServerFnError> {
     use qrcode::QrCode;
@@ -58,6 +60,7 @@ pub fn App(cx: Scope) -> impl IntoView {
     view! { cx,
         <div>
             <h1>"ping0 - Fast Upload & Share"</h1>
+            #[cfg(feature = "csr")]
             <ActionForm action=upload_action>
                 <label>
                     "Upload Image: "
@@ -74,6 +77,7 @@ pub fn App(cx: Scope) -> impl IntoView {
                 }.into_view(cx),
                 Err(e) => view! { cx, <p>"Error: " {e.to_string()}</p> }.into_view(cx),
             })}
+            #[cfg(feature = "csr")]
             <ActionForm action=link_action>
                 <label>
                     "Link: "
