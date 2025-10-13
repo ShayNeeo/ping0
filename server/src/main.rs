@@ -1,7 +1,8 @@
 use axum::routing::{get, post};
 use axum::{Router};
 use leptos::*;
-use leptos_axum::{generate_route_list, LeptosRoutes, LeptosOptions, handle_server_fns};
+use leptos_axum::{generate_route_list, LeptosRoutes, handle_server_fns};
+use leptos::LeptosOptions;
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 use axum::routing::get_service;
