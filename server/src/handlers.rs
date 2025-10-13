@@ -1,6 +1,7 @@
 use axum::extract::{Form, Multipart, Path as AxumPath, Query, State};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect};
+use axum::Json;
 use mime_guess::from_path as mime_from_path;
 use nanoid::nanoid;
 use qrcode::render::svg::Color;
@@ -12,8 +13,6 @@ use tokio::fs;
 use uuid::Uuid;
 use askama::Template;
 use ping0::templates::{IndexTemplate, ResultTemplate, ImageOgTemplate};
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD as B64;
 
 // Maximum file size: 10MB
 const MAX_FILE_SIZE: usize = 10 * 1024 * 1024;
