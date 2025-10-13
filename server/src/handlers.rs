@@ -263,8 +263,8 @@ pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart)
         let name = field.name().unwrap_or("");
         match name {
             "content" => {
-                if let Some(fname) = field.file_name() {
-                    if let Ok(bytes) = field.bytes().await { file_bytes = Some((fname.to_string(), bytes.to_vec())); }
+                if let Some(fname) = field.file_name().map(|s| s.to_string()) {
+                    if let Ok(bytes) = field.bytes().await { file_bytes = Some((fname, bytes.to_vec())); }
                 } else if let Ok(text) = field.text().await {
                     if !text.trim().is_empty() { link_value = Some(text.trim().to_string()); }
                 }
