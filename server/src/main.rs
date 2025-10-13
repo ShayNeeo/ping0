@@ -3,7 +3,7 @@ use axum::{Router, Json};
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 use tower_http::cors::{CorsLayer, Any};
-use axum::http::Method;
+use axum::http::{Method, HeaderValue};
 use axum::routing::get_service;
 use axum::http::StatusCode;
 use serde_json::json;
@@ -47,7 +47,7 @@ async fn main() -> anyhow::Result<()> {
         // Adjust the allowed origin to your Pages domain(s) if different.
         .layer(
             CorsLayer::new()
-                .allow_origin("https://0.id.vn".parse().unwrap())
+                .allow_origin(HeaderValue::from_static("https://0.id.vn"))
                 .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
                 .allow_headers(Any)
         )
