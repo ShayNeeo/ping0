@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-axum = { version = "0.6", features = ["multipart"] }
+axum = { version = "=0.6.20", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
 leptos = { version = "0.2.5", features = ["ssr"] }
 leptos_axum = "0.2.5"

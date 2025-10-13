@@ -1,4 +1,4 @@
-use axum::extract::{Multipart, Form};
+use axum::extract::{Form, Multipart};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use std::path::Path;
@@ -6,6 +6,7 @@ use tokio::fs;
 use uuid::Uuid;
 use qrcode::QrCode;
 use serde::Deserialize;
+use qrcode::render::svg::Color;
 
 #[derive(Deserialize)]
 pub struct LinkRequest {
@@ -36,7 +37,7 @@ pub async fn upload_handler(mut multipart: Multipart) -> impl IntoResponse {
                     }
                     let link = format!("https://0.id.vn/files/{}", filename_saved);
                     let code = QrCode::new(link.as_bytes()).unwrap();
-                    let svg: String = code.render().min_dimensions(200,200).build();
+                    let svg: String = code.render::<Color>().min_dimensions(200, 200).build();
                     let body = format!("{{\"id\":\"{}\", \"link\":\"{}\", \"qr_svg\": \"{}\"}}", id, link, svg.replace('\"', "\\\""));
                     return (StatusCode::OK, body);
                 }
@@ -52,7 +53,7 @@ pub async fn link_handler(Form(req): Form<LinkRequest>) -> impl IntoResponse {
         return (StatusCode::BAD_REQUEST, "no link provided".to_string());
     }
     let code = QrCode::new(req.link.as_bytes()).unwrap();
-    let svg: String = code.render().min_dimensions(200,200).build();
+    let svg: String = code.render::<Color>().min_dimensions(200, 200).build();
     let body = format!("{{\"link\":\"{}\", \"qr_svg\": \"{}\"}}", req.link, svg.replace('\"', "\\\""));
     (StatusCode::OK, body)
 }

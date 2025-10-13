@@ -1,16 +1,16 @@
 # Use the official Rust image for building. Use AS in upper-case to avoid linter warnings.
 FROM rustlang/rust:nightly AS builder
 
-# Build-time cache buster: change the value of CACHEBUST when building to force
-# the following RUN layer to re-execute (useful to ensure `git clone` runs).
-ARG CACHEBUST=1
+ARG REPO_URL=https://github.com/ShayNeeo/ping0.git
+ARG GIT_REF=main
 
 WORKDIR /app
 
-# Pull the repo from GitHub so online builds use the repository contents. The
-# ARG above lets you invalidate this layer without disabling cache for the
-# entire build.
-RUN echo "CACHEBUST=$CACHEBUST" && git clone https://github.com/ShayNeeo/ping0 .
+# Pull lightweight commit metadata so the cache invalidates whenever the main branch moves.
+ADD https://api.github.com/repos/ShayNeeo/ping0/git/refs/heads/main /tmp/git-ref.json
+
+# Fetch the repository contents for online builds.
+RUN git clone --branch ${GIT_REF} --depth 1 ${REPO_URL} .
 
 # Install wasm32 target
 RUN rustup target add wasm32-unknown-unknown
