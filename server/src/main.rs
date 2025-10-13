@@ -2,6 +2,8 @@ use axum::routing::{get, post};
 use axum::{Router, Json};
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
+use tower_http::cors::{CorsLayer, Any};
+use http::Method;
 use axum::routing::get_service;
 use axum::http::StatusCode;
 use serde_json::json;
@@ -41,6 +43,14 @@ async fn main() -> anyhow::Result<()> {
         .route("/health", get(health_check))
         .route("/upload", post(handlers::upload_handler))
         .route("/link", post(handlers::link_handler))
+        // CORS: allow requests from the frontend hosted on Cloudflare Pages (https://0.id.vn)
+        // Adjust the allowed origin to your Pages domain(s) if different.
+        .layer(
+            CorsLayer::new()
+                .allow_origin("https://0.id.vn".parse().unwrap())
+                .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+                .allow_headers(Any)
+        )
         .nest_service("/files", get_service(ServeDir::new("uploads")).handle_error(|_| async { (StatusCode::INTERNAL_SERVER_ERROR, "IO Error") }))
         .nest_service("/", get_service(ServeDir::new("pkg")).handle_error(|_| async { (StatusCode::INTERNAL_SERVER_ERROR, "IO Error") }));
 
