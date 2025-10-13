@@ -1,8 +1,9 @@
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Router};
 use leptos::*;
-use leptos_axum::{generate_route_list, LeptosRoutes};
+use leptos_axum::{generate_route_list, LeptosRoutes, handle_server_fns};
 use std::net::SocketAddr;
+use tower_http::services::ServeDir;
 
 mod handlers;
 
@@ -15,7 +16,11 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/upload", post(handlers::upload_handler))
-        .leptos_routes(routes);
+        .route("/link", post(handlers::link_handler))
+        .nest_service("/files", ServeDir::new("uploads"))
+        .leptos_routes(routes)
+        .route("/api/*fn_name", get(handle_server_fns).post(handle_server_fns))
+        .nest_service("/", ServeDir::new("pkg"));
 
     let addr = SocketAddr::from(([127,0,0,1], 8080));
     tracing::info!("Server listening on {}", addr);
