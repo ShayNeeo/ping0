@@ -87,7 +87,7 @@ pub async fn upload_handler(State(state): State<AppState>, mut multipart: Multip
                 params![short_code, "file", original],
             ).ok();
 
-            let short_link = format!("{}/{}", state.base_url, short_code);
+            let short_link = format!("{}/s/{}", state.base_url, short_code);
             let qr_svg = QrCode::new(short_link.as_bytes())
                 .map(|c| c.render::<Color>().min_dimensions(200, 200).build())
                 .unwrap_or_default();
@@ -124,7 +124,7 @@ pub async fn link_handler(State(state): State<AppState>, Form(req): Form<LinkReq
         params![short_code, "url", req.link],
     ).ok();
 
-    let short_link = format!("{}/{}", state.base_url, short_code);
+    let short_link = format!("{}/s/{}", state.base_url, short_code);
     let qr_svg = if matches!(req.qr.as_deref(), Some("on")) {
         QrCode::new(short_link.as_bytes())
             .map(|c| c.render::<Color>().min_dimensions(200, 200).build())
@@ -208,7 +208,7 @@ pub async fn result_handler(State(state): State<AppState>, AxumPath(code): AxumP
     let mut stmt = conn.prepare("SELECT kind, value FROM items WHERE code = ?1").unwrap();
     let row = stmt.query_row(params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)));
     let (_kind, _value) = match row { Ok(v) => v, Err(_) => return Html("<h1>Not found</h1>".to_string()) };
-    let short_link = format!("{}/{}", state.base_url, code);
+    let short_link = format!("{}/s/{}", state.base_url, code);
     let qr_svg = if q.get("qr").map(|v| v=="1").unwrap_or(false) {
         QrCode::new(short_link.as_bytes()).map(|c| c.render::<Color>().min_dimensions(200,200).build()).unwrap_or_default()
     } else { String::new() };
@@ -295,7 +295,7 @@ pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart)
             let original = format!("file:{}", filename_saved);
             conn.execute("INSERT INTO items(code, kind, value, created_at) VALUES (?1, ?2, ?3, strftime('%s','now'))", params![short_code, "file", original]).ok();
         }
-        let short_url = format!("{}/{}", state.base_url, short_code);
+        let short_url = format!("{}/s/{}", state.base_url, short_code);
 
         let qr_code_data = if qr_required {
             match QrCode::new(short_url.as_bytes()) {
@@ -320,7 +320,7 @@ pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart)
             let conn = Connection::open(&state.db_path).unwrap();
             conn.execute("INSERT INTO items(code, kind, value, created_at) VALUES (?1, ?2, ?3, strftime('%s','now'))", params![short_code, "url", link]).ok();
         }
-        let short_url = format!("{}/{}", state.base_url, short_code);
+        let short_url = format!("{}/s/{}", state.base_url, short_code);
         let qr_code_data = if qr_required {
             match QrCode::new(short_url.as_bytes()) {
                 Ok(c) => {

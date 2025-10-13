@@ -68,7 +68,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/link", post(handlers::link_handler))
         .route("/api/upload", post(handlers::api_upload))
         .route("/r/:code", get(handlers::result_handler))
-        .route("/:code", get(handlers::short_handler))
+        .route("/s/:code", get(handlers::short_handler))
         .with_state(app_state)
         // CORS: allow requests from the frontend hosted on Cloudflare Pages (https://0.id.vn)
         // Adjust the allowed origin to your Pages domain(s) if different.
