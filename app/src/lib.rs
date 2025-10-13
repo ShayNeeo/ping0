@@ -26,10 +26,10 @@ pub async fn upload_file(file: Vec<u8>, filename: String) -> Result<UploadRespon
     let ext = Path::new(&filename).extension().and_then(|e| e.to_str()).unwrap_or("bin");
     let filename_saved = format!("{}.{}", id, ext);
     let path = format!("uploads/{}", filename_saved);
-    fs::create_dir_all("uploads").await?;
-    fs::write(&path, &file).await?;
+    fs::create_dir_all("uploads").await.map_err(|e| ServerFnError::ServerError(e.to_string()))?;
+    fs::write(&path, &file).await.map_err(|e| ServerFnError::ServerError(e.to_string()))?;
     let link = format!("https://0.id.vn/files/{}", filename_saved);
-    let code = QrCode::new(link.as_bytes())?;
+    let code = QrCode::new(link.as_bytes()).map_err(|e| ServerFnError::ServerError(e.to_string()))?;
     let svg = code.render().min_dimensions(200,200).build();
     Ok(UploadResponse {
         id: id.to_string(),
@@ -43,7 +43,7 @@ pub async fn upload_file(file: Vec<u8>, filename: String) -> Result<UploadRespon
 pub async fn generate_qr(link: String) -> Result<LinkResponse, ServerFnError> {
     use qrcode::QrCode;
 
-    let code = QrCode::new(link.as_bytes())?;
+    let code = QrCode::new(link.as_bytes()).map_err(|e| ServerFnError::ServerError(e.to_string()))?;
     let svg = code.render().min_dimensions(200,200).build();
     Ok(LinkResponse {
         link,
@@ -56,11 +56,9 @@ pub fn App(cx: Scope) -> impl IntoView {
     let upload_action = create_server_action::<UploadFile>(cx);
     let link_action = create_server_action::<GenerateQr>(cx);
     let (link_input, set_link_input) = create_signal(cx, String::new());
-
-    view! { cx,
-        <div>
-            <h1>"ping0 - Fast Upload & Share"</h1>
-            #[cfg(feature = "csr")]
+    // CSR-only forms (can't be compiled inside `view!` with attributes)
+    let upload_form = if cfg!(feature = "csr") {
+        view! { cx,
             <ActionForm action=upload_action>
                 <label>
                     "Upload Image: "
@@ -68,6 +66,29 @@ pub fn App(cx: Scope) -> impl IntoView {
                 </label>
                 <input type="submit" value="Upload"/>
             </ActionForm>
+        }.into_view(cx)
+    } else {
+        view! { cx, <div/> }.into_view(cx)
+    };
+
+    let link_form = if cfg!(feature = "csr") {
+        view! { cx,
+            <ActionForm action=link_action>
+                <label>
+                    "Link: "
+                    <input type="text" name="link" on:input=move |ev| set_link_input.set(event_target_value(&ev))/>
+                </label>
+                <input type="submit" value="Generate QR"/>
+            </ActionForm>
+        }.into_view(cx)
+    } else {
+        view! { cx, <div/> }.into_view(cx)
+    };
+
+    view! { cx,
+        <div>
+            <h1>"ping0 - Fast Upload & Share"</h1>
+            {upload_form}
             {move || upload_action.value().get().map(|res| match res {
                 Ok(res) => view! { cx,
                     <div>
@@ -77,14 +98,7 @@ pub fn App(cx: Scope) -> impl IntoView {
                 }.into_view(cx),
                 Err(e) => view! { cx, <p>"Error: " {e.to_string()}</p> }.into_view(cx),
             })}
-            #[cfg(feature = "csr")]
-            <ActionForm action=link_action>
-                <label>
-                    "Link: "
-                    <input type="text" name="link" on:input=move |ev| set_link_input.set(event_target_value(&ev))/>
-                </label>
-                <input type="submit" value="Generate QR"/>
-            </ActionForm>
+            {link_form}
             {move || link_action.value().get().map(|res| match res {
                 Ok(res) => view! { cx,
                     <div>
