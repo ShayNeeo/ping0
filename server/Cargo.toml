@@ -16,3 +16,4 @@ anyhow = "1.0"
 tower-http = { version = "0.3", features = ["fs"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
+ping0-app = { path = "../app" }
