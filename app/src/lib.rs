@@ -57,7 +57,7 @@ pub fn App(cx: Scope) -> impl IntoView {
 
     view! { cx,
         <div>
-            <h1>ping0 - Fast Upload & Share</h1>
+            <h1>"ping0 - Fast Upload & Share"</h1>
             <ActionForm action=upload_action>
                 <label>
                     "Upload Image: "
