@@ -3,7 +3,7 @@ use axum::{Router, Json};
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 use tower_http::cors::{CorsLayer, Any};
-use http::Method;
+use axum::http::Method;
 use axum::routing::get_service;
 use axum::http::StatusCode;
 use serde_json::json;
