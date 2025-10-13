@@ -1,0 +1,3 @@
+body { font-family: system-ui, sans-serif; padding: 2rem; }
+.container { max-width: 640px; margin: 0 auto; }
+button { margin-top: 0.5rem }
