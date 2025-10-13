@@ -84,7 +84,7 @@ pub fn App(cx: Scope) -> impl IntoView {
             {move || link_action.value().get().map(|res| match res {
                 Ok(res) => view! { cx,
                     <div>
-                        <p>Link: " { &res.link }</p>
+                        <p>"Link: " {&res.link}</p>
                         <div inner_html={&res.qr_svg}></div>
                     </div>
                 }.into_view(cx),
