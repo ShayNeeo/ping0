@@ -40,31 +40,78 @@ The server listens on http://127.0.0.1:8080 and serves the app.
 
 ## Deployment
 
-### Backend
+### Quick Deploy to Production
+
+The project is production-ready and configured for deploy.cx:
+
+```bash
+# 1. Push to GitHub (already done)
+git push origin main
+
+# 2. Connect repository to deploy.cx
+# 3. Set environment variables:
+#    - PORT=8080
+#    - HOST=0.0.0.0
+#    - BASE_URL=https://0.id.vn
+#    - RUST_LOG=info
+
+# 4. Configure persistent storage for /app/uploads
+# 5. Deploy!
+```
+
+**📖 See [DEPLOYMENT.md](DEPLOYMENT.md) for complete deployment guide**
+
+### Local Docker Testing
 
 Build and run the Docker container:
 
 ```bash
 docker build -t ping0 .
-docker run -p 8080:8080 ping0
+docker run -p 8080:8080 \
+  -e BASE_URL=http://localhost:8080 \
+  -v $(pwd)/uploads:/app/uploads \
+  ping0
 ```
 
-Host on deploy.cx or your VPS.
-
-### Frontend
-
-The frontend is built as WASM and can be hosted on Cloudflare Pages.
-
-Build the frontend:
+Or use docker-compose:
 
 ```bash
-wasm-pack build app --target web --out-dir dist
+docker-compose up
 ```
 
-Then deploy the `dist` folder to Cloudflare Pages.
+### Health Check
+
+Verify the service is running:
+
+```bash
+curl http://localhost:8080/health
+# Response: {"status":"healthy","service":"ping0"}
+```
+
+## Production Features
+
+✅ **Security**
+- Non-root user in Docker
+- File size limits (10MB max)
+- File type validation
+- Proper error handling
+- Environment-based configuration
+
+✅ **Reliability**
+- Health check endpoint
+- Graceful error handling
+- Persistent volume support
+- Modern Axum/Tokio API
+
+✅ **Performance**
+- Release mode builds
+- Minimal Docker image
+- Optimized WASM frontend
 
 ## Domain
 
-Configured for 0.id.vn
+Configured for **0.id.vn**
 
-License: MIT
+## License
+
+MIT

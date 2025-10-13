@@ -53,8 +53,7 @@ pub async fn generate_qr(link: String) -> Result<LinkResponse, ServerFnError> {
 
 #[component]
 pub fn App(cx: Scope) -> impl IntoView {
-    let upload_action = create_server_action::<UploadFile>(cx);
-    let link_action = create_server_action::<GenerateQr>(cx);
+    #[cfg(feature = "csr")]
     let (_link_input, set_link_input) = create_signal(cx, String::new());
     // CSR-only forms (compile-time gated so SSR builds don't reference ActionForm)
     #[cfg(feature = "csr")]
@@ -93,25 +92,7 @@ pub fn App(cx: Scope) -> impl IntoView {
         <div>
             <h1>"ping0 - Fast Upload & Share"</h1>
             {upload_form}
-            {move || upload_action.value().get().map(|res| match res {
-                Ok(res) => view! { cx,
-                    <div>
-                        <p>"Link: " <a href={&res.link}>{&res.link}</a></p>
-                        <div inner_html={&res.qr_svg}></div>
-                    </div>
-                }.into_view(cx),
-                Err(e) => view! { cx, <p>"Error: " {e.to_string()}</p> }.into_view(cx),
-            })}
             {link_form}
-            {move || link_action.value().get().map(|res| match res {
-                Ok(res) => view! { cx,
-                    <div>
-                        <p>"Link: " {&res.link}</p>
-                        <div inner_html={&res.qr_svg}></div>
-                    </div>
-                }.into_view(cx),
-                Err(e) => view! { cx, <p>"Error: " {e.to_string()}</p> }.into_view(cx),
-            })}
         </div>
     }
 }
