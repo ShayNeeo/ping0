@@ -15,15 +15,22 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     // mount the leptos app
-    let routes = generate_route_list(|cx| view! { cx, <ping0_app::App/> });
+    let routes = generate_route_list(ping0_app::App);
 
-    let state = LeptosOptions::builder().build();
+    let state = LeptosOptions::builder()
+        .output_name("ping0-app")
+        .site_root("")
+        .site_pkg_dir("pkg")
+        .env(leptos_config::Env::DEV)
+        .site_addr(([127, 0, 0, 1], 8080).into())
+        .reload_port(3001)
+        .build();
 
     let app = Router::new()
         .route("/upload", post(handlers::upload_handler))
         .route("/link", post(handlers::link_handler))
         .nest_service("/files", get_service(ServeDir::new("uploads")).handle_error(|_| async { (StatusCode::INTERNAL_SERVER_ERROR, "IO Error") }))
-        .leptos_routes(routes, &state, vec![])
+        .leptos_routes(routes, &state, |cx| view! { cx, <ping0_app::App/> })
         .route("/api/*fn_name", get(handle_server_fns).post(handle_server_fns))
         .nest_service("/", get_service(ServeDir::new("pkg")).handle_error(|_| async { (StatusCode::INTERNAL_SERVER_ERROR, "IO Error") }));
 

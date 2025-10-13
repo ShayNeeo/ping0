@@ -55,7 +55,7 @@ pub async fn generate_qr(link: String) -> Result<LinkResponse, ServerFnError> {
 pub fn App(cx: Scope) -> impl IntoView {
     let upload_action = create_server_action::<UploadFile>(cx);
     let link_action = create_server_action::<GenerateQr>(cx);
-    let (link_input, set_link_input) = create_signal(cx, String::new());
+    let (_link_input, set_link_input) = create_signal(cx, String::new());
     // CSR-only forms (compile-time gated so SSR builds don't reference ActionForm)
     #[cfg(feature = "csr")]
     let upload_form = {
