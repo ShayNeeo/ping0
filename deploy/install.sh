@@ -15,6 +15,34 @@ else
 fi
 
 echo "Building release (as user: $REPO_OWNER)"
+## Auto-detect OS and install packages (Debian/apt)
+if [ -f /etc/debian_version ]; then
+  echo "Detected Debian-based OS. Installing system packages via apt..."
+  sudo apt-get update
+  sudo apt-get install -y --no-install-recommends \
+    build-essential pkg-config libssl-dev ca-certificates curl git nginx ufw python3 \
+    libclang-dev || true
+else
+  echo "Non-Debian OS detected (or /etc/debian_version missing). Skipping package install step."
+fi
+
+# Ensure a system user 'ping0' exists (service user)
+if ! id -u ping0 >/dev/null 2>&1; then
+  echo "Creating system user 'ping0'"
+  sudo useradd --system --create-home --home-dir /opt/ping0 --shell /usr/sbin/nologin ping0 || true
+fi
+
+# Ensure rustup/cargo is available for the repo owner; install rustup and nightly if missing
+if ! sudo -u "$REPO_OWNER" -H bash -lc 'command -v cargo >/dev/null 2>&1'; then
+  echo "Installing rustup for user $REPO_OWNER"
+  sudo -u "$REPO_OWNER" -H bash -lc 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+  # ensure cargo is available for subsequent commands in this script run
+  sudo -u "$REPO_OWNER" -H bash -lc 'export PATH="$HOME/.cargo/bin:$PATH"; rustup toolchain install nightly'
+fi
+
+echo "Building release (as user: $REPO_OWNER)"
+export PATH="/home/$REPO_OWNER/.cargo/bin:$PATH"
+
 if [ "$(id -u)" -eq 0 ]; then
   # if running as root, drop to repo owner if possible
   if [ "$REPO_OWNER" != "root" ]; then
