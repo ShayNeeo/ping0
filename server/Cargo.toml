@@ -1,14 +1,15 @@
 [package]
-name = "ping0-backend"
+name = "ping0-server"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
+leptos = { version = "0.2", features = ["ssr"] }
+leptos_axum = "0.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-uuid = { version = "1", features = ["v4"] }
 qrcode = "0.12"
-image = "0.24"
+uuid = { version = "1", features = ["v4"] }
 anyhow = "1.0"
