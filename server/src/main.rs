@@ -3,6 +3,7 @@ use axum::{Router};
 use leptos::*;
 use leptos_axum::{generate_route_list, LeptosRoutes, handle_server_fns};
 use leptos::LeptosOptions;
+use ping0_app::App;
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 use axum::routing::get_service;
@@ -15,7 +16,7 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
 
     // mount the leptos app
-    let routes = generate_route_list(ping0_app::App);
+    let routes = generate_route_list(|cx| view! { cx, <App/> });
 
     let state = LeptosOptions::builder()
         .output_name("ping0-app")
@@ -30,7 +31,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/upload", post(handlers::upload_handler))
         .route("/link", post(handlers::link_handler))
         .nest_service("/files", get_service(ServeDir::new("uploads")).handle_error(|_| async { (StatusCode::INTERNAL_SERVER_ERROR, "IO Error") }))
-        .leptos_routes(routes, &state, |cx| view! { cx, <ping0_app::App/> })
+        .leptos_routes(&state, routes)
+        .fallback(leptos_axum::file_and_error_handler::<App>)
         .route("/api/*fn_name", get(handle_server_fns).post(handle_server_fns))
         .nest_service("/", get_service(ServeDir::new("pkg")).handle_error(|_| async { (StatusCode::INTERNAL_SERVER_ERROR, "IO Error") }));
 
