@@ -1,15 +1,22 @@
 # Use the official Rust image for building. Use AS in upper-case to avoid linter warnings.
 FROM rustlang/rust:nightly AS builder
 
+# Build-time cache buster: change the value of CACHEBUST when building to force
+# the following RUN layer to re-execute (useful to ensure `git clone` runs).
+ARG CACHEBUST=1
+
 WORKDIR /app
 
-# Copy the current workspace into the image instead of cloning from GitHub.
-# This ensures the image builds from your local changes (so edits to Cargo.toml are used).
-# Pull the repo from GitHub so online builds use the repository contents.
-RUN git clone https://github.com/ShayNeeo/ping0 .
+# Pull the repo from GitHub so online builds use the repository contents. The
+# ARG above lets you invalidate this layer without disabling cache for the
+# entire build.
+RUN echo "CACHEBUST=$CACHEBUST" && git clone https://github.com/ShayNeeo/ping0 .
 
 # Install wasm32 target
 RUN rustup target add wasm32-unknown-unknown
+
+# Install wasm-bindgen CLI for packaging wasm frontend
+RUN cargo install -f wasm-bindgen-cli
 
 # Build the server
 RUN cargo build --release --package ping0-server
