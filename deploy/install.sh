@@ -14,6 +14,36 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 echo "Repo root: $ROOT_DIR"
 
+# Configuration (override via environment variables)
+SERVICE_NAME=${SERVICE_NAME:-ping0}
+BIN_NAME=${BIN_NAME:-ping0}
+INSTALL_DIR=${INSTALL_DIR:-/opt/ping0}
+SERVICE_USER=${SERVICE_USER:-ping0}
+SERVICE_GROUP=${SERVICE_GROUP:-$SERVICE_USER}
+DATA_DIR=${DATA_DIR:-$INSTALL_DIR/data}
+UPLOADS_DIR=${UPLOADS_DIR:-$INSTALL_DIR/uploads}
+ENV_FILE=${ENV_FILE:-/etc/default/$SERVICE_NAME}
+SYSTEMD_UNIT=${SYSTEMD_UNIT:-/etc/systemd/system/$SERVICE_NAME.service}
+CF_SSL_DIR=${CF_SSL_DIR:-/etc/ssl/cf_origin}
+NGINX_SERVER_NAME=${NGINX_SERVER_NAME:-0.id.vn}
+NGINX_SITE_PATH=${NGINX_SITE_PATH:-/etc/nginx/sites-available/$SERVICE_NAME}
+
+# Feature flags (1/true/yes to enable)
+APT_INSTALL=${APT_INSTALL:-1}
+SYSTEMD_ENABLE=${SYSTEMD_ENABLE:-1}
+NGINX_ENABLE=${NGINX_ENABLE:-1}
+
+# Build selection: auto | root | server, or provide BINARY_PATH
+BUILD_SOURCE=${BUILD_SOURCE:-auto}
+BINARY_PATH=${BINARY_PATH:-}
+
+is_enabled() {
+  case "${1:-}" in
+    1|true|TRUE|yes|YES|y|Y|on|ON|enable|enabled) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 # Build as the non-root repo owner when possible
 if [ -f "$ROOT_DIR/.git" ]; then
   REPO_OWNER=$(stat -c '%U' "$ROOT_DIR")
@@ -24,18 +54,25 @@ fi
 echo "Building release (as user: $REPO_OWNER)"
 ## Auto-detect OS and install packages (Debian/apt)
 if [ -f /etc/debian_version ]; then
-  echo "Detected Debian-based OS. Installing system packages via apt..."
-  sudo apt-get update
-  sudo apt-get install -y --no-install-recommends \
-    build-essential pkg-config libsqlite3-dev ca-certificates curl git nginx ufw || true
+  if is_enabled "$APT_INSTALL"; then
+    echo "Detected Debian-based OS. Installing system packages via apt..."
+    APT_PKGS="build-essential pkg-config libsqlite3-dev ca-certificates curl git"
+    if is_enabled "$NGINX_ENABLE"; then
+      APT_PKGS="$APT_PKGS nginx ufw"
+    fi
+    sudo apt-get update
+    sudo apt-get install -y --no-install-recommends $APT_PKGS || true
+  else
+    echo "APT_INSTALL disabled; skipping apt package installation."
+  fi
 else
   echo "Non-Debian OS detected (or /etc/debian_version missing). Skipping package install step."
 fi
 
-# Ensure a system user 'ping0' exists (service user)
-if ! id -u ping0 >/dev/null 2>&1; then
-  echo "Creating system user 'ping0'"
-  sudo useradd --system --create-home --home-dir /opt/ping0 --shell /usr/sbin/nologin ping0 || true
+# Ensure a system user exists (service user)
+if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
+  echo "Creating system user '$SERVICE_USER'"
+  sudo useradd --system --create-home --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin "$SERVICE_USER" || true
 fi
 
 # Ensure rustup/cargo is available for the repo owner; install rustup if missing
@@ -51,56 +88,87 @@ else
   (cd "$ROOT_DIR" && cargo build --release)
 fi
 
-BIN_PATH="$ROOT_DIR/target/release/ping0"
-if [ ! -f "$BIN_PATH" ] && [ -f "$ROOT_DIR/server/target/release/ping0" ]; then
-  BIN_PATH="$ROOT_DIR/server/target/release/ping0"
+# Determine which binary to install
+BIN_TARGET="$INSTALL_DIR/$BIN_NAME"
+if [ -n "$BINARY_PATH" ]; then
+  BIN_PATH="$BINARY_PATH"
+  echo "Using provided BINARY_PATH: $BIN_PATH"
+else
+  case "$BUILD_SOURCE" in
+    server)
+      CANDIDATES=("$ROOT_DIR/server/target/release/$BIN_NAME")
+      ;;
+    root)
+      CANDIDATES=("$ROOT_DIR/target/release/$BIN_NAME")
+      ;;
+    *)
+      CANDIDATES=(
+        "$ROOT_DIR/target/release/$BIN_NAME"
+        "$ROOT_DIR/server/target/release/$BIN_NAME"
+      )
+      ;;
+  esac
+  BIN_PATH=""
+  for c in "${CANDIDATES[@]}"; do
+    if [ -f "$c" ]; then
+      BIN_PATH="$c"
+      break
+    fi
+  done
 fi
-if [ ! -f "$BIN_PATH" ]; then
-  echo "ERROR: build failed, binary not found (looked in target paths)" >&2
+
+if [ -z "${BIN_PATH:-}" ] || [ ! -f "$BIN_PATH" ]; then
+  echo "ERROR: build failed, binary not found at expected locations:" >&2
+  echo "  - $ROOT_DIR/target/release/$BIN_NAME" >&2
+  echo "  - $ROOT_DIR/server/target/release/$BIN_NAME" >&2
   exit 2
 fi
 
-echo "Installing binary to /opt/ping0/ping0"
-sudo mkdir -p /opt/ping0
-sudo cp -f "$BIN_PATH" /opt/ping0/ping0
-# Ensure the directory and binary are owned so the `ping0` user can execute
-sudo chown root:ping0 /opt/ping0
-sudo chmod 750 /opt/ping0
-sudo chown root:ping0 /opt/ping0/ping0 || true
-sudo chmod 750 /opt/ping0/ping0
-sudo mkdir -p /opt/ping0/uploads /opt/ping0/data
-sudo chown -R ping0:ping0 /opt/ping0/uploads /opt/ping0/data
-sudo chmod 750 /opt/ping0/uploads /opt/ping0/data
+echo "Installing binary to $BIN_TARGET"
+sudo mkdir -p "$INSTALL_DIR"
+sudo cp -f "$BIN_PATH" "$BIN_TARGET"
+# Ensure the directory and binary are owned so the service user can execute
+sudo chown root:"$SERVICE_GROUP" "$INSTALL_DIR"
+sudo chmod 750 "$INSTALL_DIR"
+sudo chown root:"$SERVICE_GROUP" "$BIN_TARGET" || true
+sudo chmod 750 "$BIN_TARGET"
+sudo mkdir -p "$UPLOADS_DIR" "$DATA_DIR"
+sudo chown -R "$SERVICE_USER":"$SERVICE_GROUP" "$UPLOADS_DIR" "$DATA_DIR"
+sudo chmod 750 "$UPLOADS_DIR" "$DATA_DIR"
 
-echo "Ensuring runtime dirs exist"
-sudo mkdir -p /etc/ssl/cf_origin
-sudo chmod 700 /etc/ssl/cf_origin
+# Ensure SSL dir exists if nginx is enabled
+if is_enabled "$NGINX_ENABLE"; then
+  echo "Ensuring SSL dir exists at $CF_SSL_DIR"
+  sudo mkdir -p "$CF_SSL_DIR"
+  sudo chmod 700 "$CF_SSL_DIR"
+fi
 
 # Write default env file for systemd
-if [ ! -f /etc/default/ping0 ]; then
-  echo "Writing /etc/default/ping0"
-  sudo tee /etc/default/ping0 > /dev/null <<ENVV
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Writing $ENV_FILE"
+  sudo tee "$ENV_FILE" > /dev/null <<ENVV
 HOST=0.0.0.0
 PORT=8080
 BASE_URL=https://0.id.vn
-DATABASE_PATH=/opt/ping0/data/ping0.db
+DATABASE_PATH=$DATA_DIR/ping0.db
 ENVV
 fi
 
 # Systemd unit
-echo "Writing systemd unit /etc/systemd/system/ping0.service"
-sudo tee /etc/systemd/system/ping0.service > /dev/null <<'UNIT'
+if is_enabled "$SYSTEMD_ENABLE"; then
+  echo "Writing systemd unit $SYSTEMD_UNIT"
+  sudo tee "$SYSTEMD_UNIT" > /dev/null <<UNIT
 [Unit]
-Description=ping0 - Rust link & file sharer
+Description=$SERVICE_NAME - Rust link & file sharer
 After=network.target
 
 [Service]
 Type=simple
-EnvironmentFile=-/etc/default/ping0
-WorkingDirectory=/opt/ping0
-ExecStart=/opt/ping0/ping0
-User=ping0
-Group=ping0
+EnvironmentFile=-$ENV_FILE
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$BIN_TARGET
+User=$SERVICE_USER
+Group=$SERVICE_GROUP
 Restart=always
 RestartSec=2
 NoNewPrivileges=yes
@@ -109,17 +177,15 @@ NoNewPrivileges=yes
 WantedBy=multi-user.target
 UNIT
 
-echo "Reloading systemd and enabling service"
-sudo systemctl daemon-reload
-sudo systemctl enable ping0 || true
+  echo "Reloading systemd and enabling service"
+  sudo systemctl daemon-reload
+  sudo systemctl enable "$SERVICE_NAME" || true
+fi
 
 ### Nginx site setup (optional)
-# You can override the server name by passing NGINX_SERVER_NAME environment variable.
-NGINX_SERVER_NAME=${NGINX_SERVER_NAME:-0.id.vn}
-NGINX_SITE_PATH="/etc/nginx/sites-available/ping0"
-
-echo "Generating nginx site config for $NGINX_SERVER_NAME"
-sudo tee "$NGINX_SITE_PATH" > /dev/null <<NGX
+if is_enabled "$NGINX_ENABLE"; then
+  echo "Generating nginx site config for $NGINX_SERVER_NAME"
+  sudo tee "$NGINX_SITE_PATH" > /dev/null <<NGX
 server {
     listen 80;
     server_name ${NGINX_SERVER_NAME};
@@ -131,8 +197,8 @@ server {
     http2 on;
     server_name ${NGINX_SERVER_NAME};
 
-    ssl_certificate /etc/ssl/cf_origin/${NGINX_SERVER_NAME}.crt;
-    ssl_certificate_key /etc/ssl/cf_origin/${NGINX_SERVER_NAME}.key;
+    ssl_certificate $CF_SSL_DIR/${NGINX_SERVER_NAME}.crt;
+    ssl_certificate_key $CF_SSL_DIR/${NGINX_SERVER_NAME}.key;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
 
@@ -153,65 +219,94 @@ server {
 }
 NGX
 
-echo "Enabling nginx site"
-sudo ln -sf "$NGINX_SITE_PATH" /etc/nginx/sites-enabled/ping0
+  echo "Enabling nginx site"
+  sudo ln -sf "$NGINX_SITE_PATH" "/etc/nginx/sites-enabled/$SERVICE_NAME"
 
-if [ -f "/etc/ssl/cf_origin/${NGINX_SERVER_NAME}.crt" ]; then
-  echo "Found origin cert for ${NGINX_SERVER_NAME}"
-else
-  echo "Warning: origin cert /etc/ssl/cf_origin/${NGINX_SERVER_NAME}.crt not found. Place your Cloudflare Origin certificate at that path or adjust nginx config." >&2
+  if [ -f "$CF_SSL_DIR/${NGINX_SERVER_NAME}.crt" ]; then
+    echo "Found origin cert for ${NGINX_SERVER_NAME}"
+  else
+    echo "Warning: origin cert $CF_SSL_DIR/${NGINX_SERVER_NAME}.crt not found. Place your Cloudflare Origin certificate or adjust nginx config." >&2
+  fi
+
+  echo "Testing nginx configuration"
+  sudo nginx -t || true
+
+  if command -v ufw >/dev/null 2>&1; then
+    sudo ufw allow 'Nginx Full' || true
+  fi
 fi
 
-echo "Testing nginx configuration"
-sudo nginx -t || true
-
-if command -v ufw >/dev/null 2>&1; then
-  sudo ufw allow 'Nginx Full' || true
+if is_enabled "$SYSTEMD_ENABLE"; then
+  echo "Starting (or restarting) $SERVICE_NAME service"
+  sudo systemctl restart "$SERVICE_NAME" || sudo systemctl start "$SERVICE_NAME"
+  sudo systemctl status "$SERVICE_NAME" --no-pager -l || true
 fi
 
-echo "Starting (or restarting) ping0 service"
-sudo systemctl restart ping0 || sudo systemctl start ping0
-sudo systemctl status ping0 --no-pager -l || true
-
-echo "Reloading nginx (if installed)"
-if command -v nginx >/dev/null 2>&1; then
-  sudo systemctl reload nginx || sudo systemctl restart nginx || true
+if is_enabled "$NGINX_ENABLE"; then
+  echo "Reloading nginx (if installed)"
+  if command -v nginx >/dev/null 2>&1; then
+    sudo systemctl reload nginx || sudo systemctl restart nginx || true
+  fi
 fi
 
-echo "Done. To follow logs: sudo journalctl -u ping0 -f"
+echo "Done. To follow logs: sudo journalctl -u $SERVICE_NAME -f"
 
 ### Optional: write Cloudflare Origin cert/key if provided via environment or file
 # WARNING: storing private keys in environment or repo is sensitive. Prefer uploading
 # cert/key to the server via scp or using a secrets manager. This helper exists for
 # automation convenience.
-echo "\nChecking for Cloudflare Origin certificate inputs..."
-sudo mkdir -p /etc/ssl/cf_origin
-sudo chmod 700 /etc/ssl/cf_origin
+if is_enabled "$NGINX_ENABLE"; then
+  echo "Checking for Cloudflare Origin certificate inputs..."
+  sudo mkdir -p "$CF_SSL_DIR"
+  sudo chmod 700 "$CF_SSL_DIR"
 
-CRT_TARGET="/etc/ssl/cf_origin/${NGINX_SERVER_NAME}.crt"
-KEY_TARGET="/etc/ssl/cf_origin/${NGINX_SERVER_NAME}.key"
+  CRT_TARGET="$CF_SSL_DIR/${NGINX_SERVER_NAME}.crt"
+  KEY_TARGET="$CF_SSL_DIR/${NGINX_SERVER_NAME}.key"
 
-if [ -n "${CF_ORIGIN_CERT_FILE:-}" ] && [ -f "$CF_ORIGIN_CERT_FILE" ]; then
-  echo "Copying origin cert from file $CF_ORIGIN_CERT_FILE to $CRT_TARGET"
-  sudo cp -f "$CF_ORIGIN_CERT_FILE" "$CRT_TARGET"
-fi
-if [ -n "${CF_ORIGIN_KEY_FILE:-}" ] && [ -f "$CF_ORIGIN_KEY_FILE" ]; then
-  echo "Copying origin key from file $CF_ORIGIN_KEY_FILE to $KEY_TARGET"
-  sudo cp -f "$CF_ORIGIN_KEY_FILE" "$KEY_TARGET"
+  if [ -n "${CF_ORIGIN_CERT_FILE:-}" ] && [ -f "$CF_ORIGIN_CERT_FILE" ]; then
+    echo "Copying origin cert from file $CF_ORIGIN_CERT_FILE to $CRT_TARGET"
+    sudo cp -f "$CF_ORIGIN_CERT_FILE" "$CRT_TARGET"
+  fi
+  if [ -n "${CF_ORIGIN_KEY_FILE:-}" ] && [ -f "$CF_ORIGIN_KEY_FILE" ]; then
+    echo "Copying origin key from file $CF_ORIGIN_KEY_FILE to $KEY_TARGET"
+    sudo cp -f "$CF_ORIGIN_KEY_FILE" "$KEY_TARGET"
+  fi
+
+  if [ -n "${CF_ORIGIN_CERT:-}" ] && [ ! -f "$CRT_TARGET" ]; then
+    echo "Writing origin cert from CF_ORIGIN_CERT env var to $CRT_TARGET"
+    printf '%s' "$CF_ORIGIN_CERT" | sudo tee "$CRT_TARGET" > /dev/null
+  fi
+  if [ -n "${CF_ORIGIN_KEY:-}" ] && [ ! -f "$KEY_TARGET" ]; then
+    echo "Writing origin key from CF_ORIGIN_KEY env var to $KEY_TARGET"
+    printf '%s' "$CF_ORIGIN_KEY" | sudo tee "$KEY_TARGET" > /dev/null
+  fi
+
+  if [ -f "$KEY_TARGET" ] || [ -f "$CRT_TARGET" ]; then
+    sudo chown root:root "$CF_SSL_DIR"/*
+    sudo chmod 600 "$KEY_TARGET" || true
+    sudo chmod 644 "$CRT_TARGET" || true
+    echo "Origin cert/key present at $CF_SSL_DIR/"
+  fi
 fi
 
-if [ -n "${CF_ORIGIN_CERT:-}" ] && [ ! -f "$CRT_TARGET" ]; then
-  echo "Writing origin cert from CF_ORIGIN_CERT env var to $CRT_TARGET"
-  printf '%s' "$CF_ORIGIN_CERT" | sudo tee "$CRT_TARGET" > /dev/null
+# Final summary
+echo
+echo "========== $SERVICE_NAME installation summary =========="
+echo "Install dir:       $INSTALL_DIR"
+echo "Binary installed:  $BIN_TARGET"
+echo "Data dir:          $DATA_DIR"
+echo "Uploads dir:       $UPLOADS_DIR"
+echo "Env file:          $ENV_FILE"
+if is_enabled "$SYSTEMD_ENABLE"; then
+  echo "Systemd unit:      $SYSTEMD_UNIT (service: $SERVICE_NAME)"
+else
+  echo "Systemd unit:      disabled (set SYSTEMD_ENABLE=1 to enable)"
 fi
-if [ -n "${CF_ORIGIN_KEY:-}" ] && [ ! -f "$KEY_TARGET" ]; then
-  echo "Writing origin key from CF_ORIGIN_KEY env var to $KEY_TARGET"
-  printf '%s' "$CF_ORIGIN_KEY" | sudo tee "$KEY_TARGET" > /dev/null
+if is_enabled "$NGINX_ENABLE"; then
+  echo "Nginx site:        $NGINX_SITE_PATH (server_name: $NGINX_SERVER_NAME)"
+  echo "TLS cert path:     $CF_SSL_DIR/${NGINX_SERVER_NAME}.crt"
+  echo "TLS key path:      $CF_SSL_DIR/${NGINX_SERVER_NAME}.key"
+else
+  echo "Nginx:             disabled (set NGINX_ENABLE=1 to enable)"
 fi
-
-if [ -f "$KEY_TARGET" ] || [ -f "$CRT_TARGET" ]; then
-  sudo chown root:root /etc/ssl/cf_origin/*
-  sudo chmod 600 "$KEY_TARGET" || true
-  sudo chmod 644 "$CRT_TARGET" || true
-  echo "Origin cert/key present at /etc/ssl/cf_origin/"
-fi
+echo "========================================================"
