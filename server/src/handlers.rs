@@ -6,7 +6,7 @@ use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Json;
 use axum::debug_handler;
-use headers::Cookie;
+use axum_extra::headers::Cookie;
 use mime_guess::from_path as mime_from_path;
 use nanoid::nanoid;
 use qrcode::render::svg::Color;
