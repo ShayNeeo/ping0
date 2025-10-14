@@ -383,9 +383,10 @@ pub async fn admin_items(State(state): State<AppState>, cookie: Option<TypedHead
 #[debug_handler]
 pub async fn admin_delete_item(
     State(state): State<AppState>,
-    Path(CodeParams { code }): Path<CodeParams>,
+    params: Path<CodeParams>,
     cookie: Option<TypedHeader<Cookie>>,
 ) -> Response {
+    let CodeParams { code } = params.0;
     if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
         return Redirect::to("/admin/login").into_response();
     }
