@@ -401,7 +401,7 @@ pub async fn admin_items(State(state): State<AppState>, AdminCookie(token): Admi
     Html(AdminItemsTemplate { items }.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
-pub async fn admin_delete_item(State(state): State<AppState>, AxumPath(code): AxumPath<String>, AdminCookie(token): AdminCookie) -> Response {
+pub async fn admin_delete_item(AxumPath(code): AxumPath<String>, AdminCookie(token): AdminCookie, State(state): State<AppState>) -> Response {
     if !require_admin_token(&state.db_path, token.as_deref()).await { return Redirect::to("/admin/login").into_response(); }
     let conn = Connection::open(&state.db_path).unwrap();
     if let Ok((kind, value)) = conn.query_row("SELECT kind, value FROM items WHERE code = ?1", params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
