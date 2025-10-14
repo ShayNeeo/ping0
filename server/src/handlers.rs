@@ -281,7 +281,7 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
                         image_url, 
                         page_url, 
                         title: "Shared Image".to_string(), 
-                        description: "Shared via o.id.vn".to_string(),
+                        description: "Shared via 0.id.vn".to_string(),
                     };
                     return Html(tpl.render().unwrap_or_else(|_| "Template error".to_string())).into_response();
                 }

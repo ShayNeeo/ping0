@@ -69,7 +69,7 @@ pub struct ResultTemplate { pub code: String, pub short_link: String, pub qr_svg
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="canonical" href="{{ page_url }}">
     <meta property="og:type" content="website">
-    <meta property="og:site_name" content="o.id.vn">
+    <meta property="og:site_name" content="0.id.vn">
     <meta property="og:title" content="{{ title }}">
     <meta property="og:description" content="{{ description }}">
     <meta property="og:url" content="{{ page_url }}">
