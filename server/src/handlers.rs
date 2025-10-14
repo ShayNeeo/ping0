@@ -1,9 +1,11 @@
+// I've removed the unused imports `Parts` and `async_trait` from here.
 use axum::extract::{Form, Multipart, Path as AxumPath, Query, State, TypedHeader};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-use axum::http::request::Parts;
-use axum::async_trait;
+// use axum::http::request::Parts; // <-- REMOVED
+// use axum::async_trait; // <-- REMOVED
 use axum::Json;
+use axum::debug_handler; // It's good practice to import the macro
 use headers::Cookie;
 use mime_guess::from_path as mime_from_path;
 use nanoid::nanoid;
@@ -373,6 +375,7 @@ pub async fn admin_logout(State(state): State<AppState>, cookie: Option<TypedHea
     (headers, Redirect::to("/admin/login")).into_response()
 }
 
+#[debug_handler]
 pub async fn admin_home(State(state): State<AppState>, cookie: Option<TypedHeader<Cookie>>) -> Response {
     if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
         return Redirect::to("/admin/login").into_response();
@@ -380,6 +383,7 @@ pub async fn admin_home(State(state): State<AppState>, cookie: Option<TypedHeade
     Html(AdminHomeTemplate.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
+#[debug_handler]
 pub async fn admin_items(State(state): State<AppState>, cookie: Option<TypedHeader<Cookie>>) -> Response {
     if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
         return Redirect::to("/admin/login").into_response();
@@ -392,6 +396,8 @@ pub async fn admin_items(State(state): State<AppState>, cookie: Option<TypedHead
     Html(AdminItemsTemplate { items }.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
+// THE FIX IS HERE
+#[debug_handler]
 pub async fn admin_delete_item(
     State(state): State<AppState>,
     AxumPath(code): AxumPath<String>,
@@ -411,6 +417,7 @@ pub async fn admin_delete_item(
 // SPA contract: POST /api/upload (multipart/form-data)
 // fields: content (URL string or file), qr_required ("true"|"false")
 // returns: { success: bool, short_url?: string, qr_code_data?: string|null, error?: string }
+#[debug_handler]
 pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart) -> axum::response::Response {
     let mut link_value: Option<String> = None;
     let mut saved_filename: Option<String> = None;
