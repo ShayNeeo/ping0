@@ -21,6 +21,9 @@ use askama::Template;
 use ping0::templates::{IndexTemplate, ResultTemplate, ImageOgTemplate, FileInfoTemplate, AdminLoginTemplate, AdminHomeTemplate, AdminItemsTemplate};
 use sha2::{Digest, Sha256};
 use rand::{distributions::Alphanumeric, Rng};
+use image::io::Reader as ImageReader;
+use image::imageops::{overlay, FilterType};
+use image::codecs::jpeg::JpegEncoder;
 
 #[derive(Deserialize)]
 pub struct CodeParams { pub code: String }
@@ -275,13 +278,19 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
             if let Some(ext) = StdPath::new(filename).extension().and_then(|e| e.to_str()) {
                 let mime = mime_from_path(filename).first_or_octet_stream();
                 if ["jpg","jpeg","png","gif","webp","svg"].iter().any(|e| e.eq_ignore_ascii_case(ext)) {
-                    let image_url = format!("{}/files/{}", state.base_url, filename);
+                    // Build a social-preview (1200x630) if supported; otherwise fall back to original
+                    let preview_rel = build_social_preview(filename).unwrap_or_else(|| filename.to_string());
+                    let image_url = format!("{}/files/{}", state.base_url, preview_rel);
+                    let (image_width, image_height, image_type) = (1200u32, 630u32, "image/jpeg".to_string());
                     let page_url = format!("{}/s/{}", state.base_url, code);
                     let tpl = ImageOgTemplate { 
                         image_url, 
                         page_url, 
                         title: "Shared Image".to_string(), 
                         description: "Shared via 0.id.vn".to_string(),
+                        image_width,
+                        image_height,
+                        image_type,
                     };
                     return Html(tpl.render().unwrap_or_else(|_| "Template error".to_string())).into_response();
                 }
@@ -294,6 +303,44 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
         }
         _ => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
+}
+
+// Create a 1200x630 letterboxed JPEG preview under uploads/og/<stem>.jpg
+// Returns relative path like "og/<stem>.jpg" on success
+fn build_social_preview(filename: &str) -> Option<String> {
+    // Only attempt for png/jpg/jpeg inputs (supported by current image features)
+    let ext = StdPath::new(filename).extension().and_then(|e| e.to_str())?.to_ascii_lowercase();
+    if !matches!(ext.as_str(), "jpg" | "jpeg" | "png") {
+        return None;
+    }
+
+    let stem = StdPath::new(filename).file_stem()?.to_str()?.to_string();
+    let rel_out = format!("og/{}.jpg", stem);
+    let out_path = StdPath::new("uploads").join(&rel_out);
+    if out_path.exists() { return Some(rel_out); }
+
+    let in_path = StdPath::new("uploads").join(filename);
+    std::fs::create_dir_all("uploads/og").ok()?;
+
+    let img = ImageReader::open(&in_path).ok()?.with_guessed_format().ok()?.decode().ok()?;
+    let target_w: u32 = 1200;
+    let target_h: u32 = 630;
+    let (w, h) = img.dimensions();
+    let scale = (target_w as f32 / w as f32).min(target_h as f32 / h as f32).max(0.0001);
+    let new_w = ((w as f32 * scale).round().max(1.0)) as u32;
+    let new_h = ((h as f32 * scale).round().max(1.0)) as u32;
+    let resized = img.resize(new_w, new_h, FilterType::Triangle);
+
+    let mut canvas = image::RgbaImage::from_pixel(target_w, target_h, image::Rgba([255, 255, 255, 255]));
+    let x = (target_w - new_w) / 2;
+    let y = (target_h - new_h) / 2;
+    overlay(&mut canvas, &resized.to_rgba8(), x, y);
+
+    let rgb = image::DynamicImage::ImageRgba8(canvas).to_rgb8();
+    let mut file = std::fs::File::create(&out_path).ok()?;
+    let mut enc = JpegEncoder::new_with_quality(&mut file, 85);
+    enc.encode_image(&image::DynamicImage::ImageRgb8(rgb)).ok()?;
+    Some(rel_out)
 }
 
 fn hash_with_salt(password: &str, salt: &str) -> String {
