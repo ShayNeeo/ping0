@@ -1,6 +1,7 @@
 use axum::routing::{get, post};
 use axum::{Router, Json};
 use std::net::SocketAddr;
+use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 use tower_http::cors::{CorsLayer, Any};
 use tower_http::limit::RequestBodyLimitLayer;
@@ -107,10 +108,9 @@ async fn main() -> anyhow::Result<()> {
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
     tracing::info!("🚀 Server listening on {}", addr);
     
-    // Use Axum 0.6 API
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await?;
+    // Axum 0.7 API: use TcpListener + axum::serve
+    let listener = TcpListener::bind(addr).await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
