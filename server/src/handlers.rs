@@ -1,4 +1,4 @@
-use axum::extract::{Form, Multipart, Path as AxumPath, Query, State, FromRequestParts};
+use axum::extract::{Form, Multipart, Path as AxumPath, Query, State, TypedHeader};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::http::request::Parts;
@@ -20,23 +20,12 @@ use ping0::templates::{IndexTemplate, ResultTemplate, ImageOgTemplate, FileInfoT
 use sha2::{Digest, Sha256};
 use rand::{distributions::Alphanumeric, Rng};
 
-// Custom extractor for admin cookies
-pub struct AdminCookie(pub Option<String>);
-
-#[async_trait]
-impl<S> FromRequestParts<S> for AdminCookie
-where
-    S: Send + Sync,
-{
-    type Rejection = (StatusCode, &'static str);
-
-    async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
-        let token = parts.headers.get(axum::http::header::COOKIE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|raw| Cookie::parse(raw).ok())
-            .and_then(|cookies| cookies.get("ping0_admin").map(|c| c.to_string()));
-        Ok(AdminCookie(token))
-    }
+// Utility to extract the admin cookie token
+fn extract_admin_token(cookie: Option<TypedHeader<Cookie>>) -> Option<String> {
+    cookie
+        .as_ref()
+        .and_then(|TypedHeader(c)| c.get("ping0_admin"))
+        .map(|value| value.to_string())
 }
 
 // Maximum file size: 1 GiB
@@ -373,20 +362,28 @@ pub async fn admin_login_post(State(state): State<AppState>, Form(f): Form<Admin
     (headers, Redirect::to("/admin")).into_response()
 }
 
-pub async fn admin_logout(State(state): State<AppState>, AdminCookie(token): AdminCookie) -> impl IntoResponse {
-    if let Some(tok) = token { if let Ok(conn) = Connection::open(&state.db_path) { let _ = conn.execute("DELETE FROM sessions WHERE token = ?1", params![tok]); } }
+pub async fn admin_logout(State(state): State<AppState>, cookie: Option<TypedHeader<Cookie>>) -> impl IntoResponse {
+    if let Some(tok) = extract_admin_token(cookie) {
+        if let Ok(conn) = Connection::open(&state.db_path) {
+            let _ = conn.execute("DELETE FROM sessions WHERE token = ?1", params![tok]);
+        }
+    }
     let mut headers = HeaderMap::new();
     headers.insert(axum::http::header::SET_COOKIE, HeaderValue::from_static("ping0_admin=; Max-Age=0; Path=/"));
     (headers, Redirect::to("/admin/login")).into_response()
 }
 
-pub async fn admin_home(State(state): State<AppState>, AdminCookie(token): AdminCookie) -> Response {
-    if !require_admin_token(&state.db_path, token.as_deref()).await { return Redirect::to("/admin/login").into_response(); }
+pub async fn admin_home(State(state): State<AppState>, cookie: Option<TypedHeader<Cookie>>) -> Response {
+    if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
+        return Redirect::to("/admin/login").into_response();
+    }
     Html(AdminHomeTemplate.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
-pub async fn admin_items(State(state): State<AppState>, AdminCookie(token): AdminCookie) -> Response {
-    if !require_admin_token(&state.db_path, token.as_deref()).await { return Redirect::to("/admin/login").into_response(); }
+pub async fn admin_items(State(state): State<AppState>, cookie: Option<TypedHeader<Cookie>>) -> Response {
+    if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
+        return Redirect::to("/admin/login").into_response();
+    }
     let conn = Connection::open(&state.db_path).unwrap();
     let mut stmt = conn.prepare("SELECT code, kind, value, created_at FROM items ORDER BY created_at DESC LIMIT 500").unwrap();
     let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?))).unwrap();
@@ -395,8 +392,14 @@ pub async fn admin_items(State(state): State<AppState>, AdminCookie(token): Admi
     Html(AdminItemsTemplate { items }.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
-pub async fn admin_delete_item(State(state): State<AppState>, AxumPath(code): AxumPath<String>, AdminCookie(token): AdminCookie) -> Response {
-    if !require_admin_token(&state.db_path, token.as_deref()).await { return Redirect::to("/admin/login").into_response(); }
+pub async fn admin_delete_item(
+    State(state): State<AppState>,
+    AxumPath(code): AxumPath<String>,
+    cookie: Option<TypedHeader<Cookie>>,
+) -> Response {
+    if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
+        return Redirect::to("/admin/login").into_response();
+    }
     let conn = Connection::open(&state.db_path).unwrap();
     if let Ok((kind, value)) = conn.query_row("SELECT kind, value FROM items WHERE code = ?1", params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
         if kind == "file" { if let Some(fname) = value.strip_prefix("file:") { let _ = tokio::fs::remove_file(PathBuf::from("uploads").join(fname)).await; } }
