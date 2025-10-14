@@ -386,7 +386,7 @@ pub async fn admin_items(State(state): State<AppState>, headers: HeaderMap) -> a
     Html(AdminItemsTemplate { items }.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
-pub async fn admin_delete_item(State(state): State<AppState>, headers: HeaderMap, AxumPath(code): AxumPath<String>) -> impl IntoResponse {
+pub async fn admin_delete_item(State(state): State<AppState>, AxumPath(code): AxumPath<String>, headers: HeaderMap) -> axum::response::Response {
     if !require_admin(&state.db_path, &headers).await { return Redirect::to("/admin/login").into_response(); }
     let conn = Connection::open(&state.db_path).unwrap();
     if let Ok((kind, value)) = conn.query_row("SELECT kind, value FROM items WHERE code = ?1", params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
