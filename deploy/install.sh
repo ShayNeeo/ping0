@@ -27,6 +27,7 @@ SYSTEMD_UNIT=${SYSTEMD_UNIT:-/etc/systemd/system/$SERVICE_NAME.service}
 CF_SSL_DIR=${CF_SSL_DIR:-/etc/ssl/cf_origin}
 NGINX_SERVER_NAME=${NGINX_SERVER_NAME:-0.id.vn}
 NGINX_SITE_PATH=${NGINX_SITE_PATH:-/etc/nginx/sites-available/$SERVICE_NAME}
+APP_PORT=${APP_PORT:-10105}
 
 # Feature flags (1/true/yes to enable)
 APT_INSTALL=${APT_INSTALL:-1}
@@ -157,7 +158,7 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "Writing $ENV_FILE"
   sudo tee "$ENV_FILE" > /dev/null <<ENVV
 HOST=0.0.0.0
-PORT=10105
+PORT=$APP_PORT
 BASE_URL=https://0.id.vn
 DATABASE_PATH=$DATA_DIR/ping0.db
 ENVV
@@ -218,7 +219,7 @@ server {
     add_header X-Frame-Options DENY;
 
     location / {
-        proxy_pass http://127.0.0.1:10105;
+        proxy_pass http://127.0.0.1:$APP_PORT;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
