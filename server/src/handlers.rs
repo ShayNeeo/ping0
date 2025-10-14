@@ -260,7 +260,7 @@ pub async fn result_handler(State(state): State<AppState>, Path(code): Path<Stri
     Html(tpl.render().unwrap_or_else(|_| "Template error".to_string()))
 }
 
-pub async fn short_handler(State(state): State<AppState>, Path(code): Path<String>) -> axum::response::Response {
+pub async fn short_handler(State(state): State<AppState>, Path(code): Path<String>, headers: HeaderMap) -> axum::response::Response {
     let (kind, value) = {
         let conn = Connection::open(&state.db_path).unwrap();
         let mut stmt = conn.prepare("SELECT kind, value FROM items WHERE code = ?1").unwrap();
@@ -277,10 +277,21 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
                 if ["jpg","jpeg","png","gif","webp","svg"].iter().any(|e| e.eq_ignore_ascii_case(ext)) {
                     let image_url = format!("{}/files/{}", state.base_url, filename);
                     let page_url = format!("{}/s/{}", state.base_url, code);
-                    let tpl = ImageOgTemplate { 
-                        image_url, 
-                        page_url, 
-                        title: "Shared Image".to_string(), 
+                    // Content negotiation: if the client wants HTML, return the OG preview page;
+                    // otherwise (e.g., Markdown image fetch), redirect to the raw image.
+                    let accept = headers
+                        .get(axum::http::header::ACCEPT)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or("")
+                        .to_ascii_lowercase();
+                    let wants_html = accept.contains("text/html");
+                    if !wants_html {
+                        return Redirect::permanent(&image_url).into_response();
+                    }
+                    let tpl = ImageOgTemplate {
+                        image_url,
+                        page_url,
+                        title: "Shared Image".to_string(),
                         description: "Shared via 0.id.vn".to_string(),
                     };
                     return Html(tpl.render().unwrap_or_else(|_| "Template error".to_string())).into_response();
