@@ -84,10 +84,12 @@ pub struct ResultTemplate { pub code: String, pub short_link: String, pub qr_svg
     <meta name="twitter:image" content="{{ image_url }}">
   </head>
   <body style="font-family:Courier New,monospace;background:#fff;color:#000;text-align:center">
-    <img src="{{ image_url }}" alt="{{ title }}" style="max-width:95vw;max-height:90vh">
+    <a href="{{ original_url }}" target="_blank" rel="noopener">
+      <img src="{{ original_url }}" alt="{{ title }}" style="max-width:98vw;max-height:95vh;object-fit:contain">
+    </a>
   </body>
  </html>"#, ext = "html")]
-pub struct ImageOgTemplate { pub image_url: String, pub page_url: String, pub title: String, pub description: String, pub image_width: u32, pub image_height: u32, pub image_type: String }
+pub struct ImageOgTemplate { pub image_url: String, pub original_url: String, pub page_url: String, pub title: String, pub description: String, pub image_width: u32, pub image_height: u32, pub image_type: String }
 
 #[derive(Template)]
 #[template(source = r#"<!DOCTYPE html>

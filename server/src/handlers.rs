@@ -282,10 +282,12 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
                     // Build a social-preview (1200x630) if supported; otherwise fall back to original
                     let preview_rel = build_social_preview(filename).unwrap_or_else(|| filename.to_string());
                     let image_url = format!("{}/files/{}", state.base_url, preview_rel);
+                    let original_url = format!("{}/files/{}", state.base_url, filename);
                     let (image_width, image_height, image_type) = (1200u32, 630u32, "image/jpeg".to_string());
                     let page_url = format!("{}/s/{}", state.base_url, code);
                     let tpl = ImageOgTemplate { 
-                        image_url, 
+                        image_url,
+                        original_url,
                         page_url, 
                         title: "Shared Image".to_string(), 
                         description: "Shared via 0.id.vn".to_string(),
