@@ -4,6 +4,7 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::http::request::Parts;
 use axum::async_trait;
 use axum::Json;
+use headers::Cookie;
 use mime_guess::from_path as mime_from_path;
 use nanoid::nanoid;
 use qrcode::render::svg::Color;
@@ -20,7 +21,7 @@ use sha2::{Digest, Sha256};
 use rand::{distributions::Alphanumeric, Rng};
 
 // Custom extractor for admin cookies
-pub struct AdminCookie(Option<String>);
+pub struct AdminCookie(pub Option<String>);
 
 #[async_trait]
 impl<S> FromRequestParts<S> for AdminCookie
@@ -32,15 +33,8 @@ where
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         let token = parts.headers.get(axum::http::header::COOKIE)
             .and_then(|v| v.to_str().ok())
-            .and_then(|raw| {
-                for part in raw.split(';') {
-                    let kv = part.trim();
-                    if let Some(v) = kv.strip_prefix("ping0_admin=") {
-                        return Some(v.to_string());
-                    }
-                }
-                None
-            });
+            .and_then(|raw| Cookie::parse(raw).ok())
+            .and_then(|cookies| cookies.get("ping0_admin").map(|c| c.to_string()));
         Ok(AdminCookie(token))
     }
 }
@@ -401,7 +395,7 @@ pub async fn admin_items(State(state): State<AppState>, AdminCookie(token): Admi
     Html(AdminItemsTemplate { items }.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
-pub async fn admin_delete_item(AxumPath(code): AxumPath<String>, AdminCookie(token): AdminCookie, State(state): State<AppState>) -> Response {
+pub async fn admin_delete_item(State(state): State<AppState>, AxumPath(code): AxumPath<String>, AdminCookie(token): AdminCookie) -> Response {
     if !require_admin_token(&state.db_path, token.as_deref()).await { return Redirect::to("/admin/login").into_response(); }
     let conn = Connection::open(&state.db_path).unwrap();
     if let Ok((kind, value)) = conn.query_row("SELECT kind, value FROM items WHERE code = ?1", params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
