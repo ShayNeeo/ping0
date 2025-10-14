@@ -24,6 +24,7 @@ use rand::{distributions::Alphanumeric, Rng};
 use image::io::Reader as ImageReader;
 use image::imageops::{overlay, FilterType};
 use image::codecs::jpeg::JpegEncoder;
+use image::GenericImageView;
 
 #[derive(Deserialize)]
 pub struct CodeParams { pub code: String }
@@ -334,7 +335,7 @@ fn build_social_preview(filename: &str) -> Option<String> {
     let mut canvas = image::RgbaImage::from_pixel(target_w, target_h, image::Rgba([255, 255, 255, 255]));
     let x = (target_w - new_w) / 2;
     let y = (target_h - new_h) / 2;
-    overlay(&mut canvas, &resized.to_rgba8(), x, y);
+    overlay(&mut canvas, &resized.to_rgba8(), x as i64, y as i64);
 
     let rgb = image::DynamicImage::ImageRgba8(canvas).to_rgb8();
     let mut file = std::fs::File::create(&out_path).ok()?;
