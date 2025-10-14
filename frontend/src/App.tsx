@@ -22,6 +22,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false)
   const [result, setResult] = useState<SuccessResult | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [dragOver, setDragOver] = useState(false)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
 
   const fileRef = useRef<HTMLInputElement | null>(null)
 
@@ -39,6 +41,12 @@ export default function App() {
     if (file) {
       // Clear URL if a file is chosen
       setUrlInput('')
+      if (file.type.startsWith('image/')) {
+        const url = URL.createObjectURL(file)
+        setImagePreview(url)
+      } else {
+        setImagePreview(null)
+      }
     }
   }
 
@@ -97,6 +105,36 @@ export default function App() {
         <p className="subtitle">Share a link or upload a file · get a short URL</p>
 
         <form onSubmit={handleSubmit} className="form">
+          <div
+            className={`dropzone ${dragOver ? 'dragover' : ''}`}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragOver(false);
+              const f = e.dataTransfer.files?.[0]
+              if (f) handleFileChange(f)
+            }}
+            onPaste={(e) => {
+              const items = e.clipboardData?.items
+              if (!items) return
+              for (let i = 0; i < items.length; i++) {
+                const it = items[i]
+                if (it.kind === 'file') {
+                  const f = it.getAsFile()
+                  if (f) { handleFileChange(f); break }
+                }
+                if (it.kind === 'string') {
+                  it.getAsString((text) => {
+                    if (/^https?:\/\//i.test(text.trim())) handleUrlChange(text.trim())
+                  })
+                }
+              }
+            }}
+          >
+            <div>Drop a file here, or paste a file or URL</div>
+          </div>
+
           <label className="label">
             URL
             <input
@@ -119,6 +157,12 @@ export default function App() {
               className="input"
             />
           </label>
+
+          {imagePreview && (
+            <div className="preview">
+              <img src={imagePreview} alt="preview" />
+            </div>
+          )}
 
           <label className="checkbox">
             <input

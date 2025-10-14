@@ -74,4 +74,127 @@ pub struct ResultTemplate { pub code: String, pub short_link: String, pub qr_svg
  </html>"#, ext = "html")]
 pub struct ImageOgTemplate { pub image_url: String }
 
+#[derive(Template)]
+#[template(source = r#"<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>{{ filename }}</title>
+    <style>
+      body{font-family:Courier New,monospace;background:#fff;color:#000}
+      main{max-width:560px;margin:4rem auto;text-align:center}
+      a{color:#000}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>{{ filename }}</h1>
+      <p>MIME: {{ mime }}</p>
+      <p><a href="{{ file_url }}">Download</a></p>
+    </main>
+  </body>
+</html>"#, ext = "html")]
+pub struct FileInfoTemplate { pub filename: String, pub file_url: String, pub mime: String }
 
+// ---------- Admin Templates ----------
+
+#[derive(Template)]
+#[template(source = r#"<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Admin Login</title>
+    <style>
+      body{font-family:Courier New,monospace;background:#fff;color:#000}
+      main{max-width:480px;margin:4rem auto;text-align:center}
+      label,input,button{display:block;margin:0.6rem auto}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Admin Login</h1>
+      <form action="/admin/login" method="post">
+        <label>Username:
+          <input type="text" name="username" required>
+        </label>
+        <label>Password:
+          <input type="password" name="password" required>
+        </label>
+        <button type="submit">Login</button>
+      </form>
+      <p style="font-size:0.9rem">First login sets the admin username and password.</p>
+    </main>
+  </body>
+</html>"#, ext = "html")]
+pub struct AdminLoginTemplate;
+
+#[derive(Template)]
+#[template(source = r#"<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Admin</title>
+    <style>
+      body{font-family:Courier New,monospace;background:#fff;color:#000}
+      main{max-width:640px;margin:4rem auto;text-align:center}
+      a,button{color:#000}
+      form{display:inline}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Admin</h1>
+      <p>
+        <a href="/admin/items">Items</a>
+      </p>
+      <form action="/admin/logout" method="post"><button type="submit">Logout</button></form>
+    </main>
+  </body>
+</html>"#, ext = "html")]
+pub struct AdminHomeTemplate;
+
+#[derive(Template)]
+#[template(source = r#"<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Items</title>
+    <style>
+      body{font-family:Courier New,monospace;background:#fff;color:#000}
+      main{max-width:900px;margin:2rem auto}
+      table{width:100%;border-collapse:collapse}
+      th,td{border:1px solid #000;padding:6px;text-align:left}
+      a,button{color:#000}
+      form{display:inline}
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Items</h1>
+      <p>
+        <a href="/admin">Home</a>
+        <span> · </span>
+        <form action="/admin/logout" method="post"><button type="submit">Logout</button></form>
+      </p>
+      <table>
+        <thead>
+          <tr><th>Code</th><th>Kind</th><th>Value</th><th>When</th><th>Actions</th></tr>
+        </thead>
+        <tbody>
+        {% for (code, kind, value, created_at) in items %}
+          <tr>
+            <td><a href="/s/{{ code }}" target="_blank">{{ code }}</a></td>
+            <td>{{ kind }}</td>
+            <td style="max-width:420px;word-break:break-all">{{ value }}</td>
+            <td>{{ created_at }}</td>
+            <td>
+              <form action="/admin/items/{{ code }}/delete" method="post" onsubmit="return confirm('Delete {{ code }}?')"><button type="submit">Delete</button></form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </main>
+  </body>
+</html>"#, ext = "html")]
+pub struct AdminItemsTemplate { pub items: Vec<(String, String, String, i64)> }

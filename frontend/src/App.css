@@ -44,6 +44,23 @@ h1 {
   gap: 0.75rem;
 }
 
+.dropzone {
+  border: 2px dashed var(--border);
+  padding: 1rem;
+  text-align: center;
+  background: var(--bg);
+}
+.dropzone.dragover {
+  background: #f2f2f2;
+}
+
+.preview img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  border: 2px solid var(--border);
+}
+
 .label {
   display: flex;
   flex-direction: column;

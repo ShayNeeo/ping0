@@ -3,6 +3,7 @@ use axum::{Router, Json};
 use std::net::SocketAddr;
 use tower_http::services::ServeDir;
 use tower_http::cors::{CorsLayer, Any};
+use tower_http::limit::RequestBodyLimitLayer;
 use axum::http::Method;
 use axum::routing::get_service;
 use axum::http::StatusCode;
@@ -54,6 +55,16 @@ async fn main() -> anyhow::Result<()> {
             value TEXT NOT NULL,       -- url or 'file:filename'
             created_at INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS admin (
+            id INTEGER PRIMARY KEY,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            salt TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            created_at INTEGER NOT NULL
+        );
         "#,
     )?;
 
@@ -73,6 +84,13 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/upload", post(handlers::api_upload))
         .route("/r/:code", get(handlers::result_handler))
         .route("/s/:code", get(handlers::short_handler))
+        // Admin routes
+        .route("/admin/login", get(handlers::admin_login_get))
+        .route("/admin/login", post(handlers::admin_login_post))
+        .route("/admin/logout", post(handlers::admin_logout))
+        .route("/admin", get(handlers::admin_home))
+        .route("/admin/items", get(handlers::admin_items))
+        .route("/admin/items/:code/delete", post(handlers::admin_delete_item))
         .with_state(app_state)
         // CORS: allow requests from the frontend hosted on Cloudflare Pages (https://0.id.vn)
         // Adjust the allowed origin to your Pages domain(s) if different.
@@ -82,6 +100,8 @@ async fn main() -> anyhow::Result<()> {
                 .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
                 .allow_headers(Any)
         )
+        // Raise max request body size to 1 GiB
+        .layer(RequestBodyLimitLayer::new(1024 * 1024 * 1024))
         .nest_service("/files", get_service(ServeDir::new("uploads")).handle_error(|_| async { (StatusCode::INTERNAL_SERVER_ERROR, "IO Error") }));
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
