@@ -28,6 +28,7 @@ CF_SSL_DIR=${CF_SSL_DIR:-/etc/ssl/cf_origin}
 NGINX_SERVER_NAME=${NGINX_SERVER_NAME:-0.id.vn}
 NGINX_SITE_PATH=${NGINX_SITE_PATH:-/etc/nginx/sites-available/$SERVICE_NAME}
 APP_PORT=${APP_PORT:-10105}
+ENV_OVERWRITE=${ENV_OVERWRITE:-1}
 
 # Feature flags (1/true/yes to enable)
 APT_INSTALL=${APT_INSTALL:-1}
@@ -153,15 +154,25 @@ if is_enabled "$NGINX_ENABLE"; then
   sudo chmod 700 "$CF_SSL_DIR"
 fi
 
-# Write default env file for systemd
-if [ ! -f "$ENV_FILE" ]; then
-  echo "Writing $ENV_FILE"
+# Write (or update) env file for systemd
+write_env_file() {
   sudo tee "$ENV_FILE" > /dev/null <<ENVV
 HOST=0.0.0.0
 PORT=$APP_PORT
 BASE_URL=https://0.id.vn
 DATABASE_PATH=$DATA_DIR/ping0.db
 ENVV
+}
+
+if [ ! -f "$ENV_FILE" ]; then
+  echo "Writing $ENV_FILE"
+  write_env_file
+elif is_enabled "$ENV_OVERWRITE"; then
+  echo "Updating $ENV_FILE (ENV_OVERWRITE enabled)"
+  sudo cp "$ENV_FILE" "${ENV_FILE}.bak.$(date +%s)" || true
+  write_env_file
+else
+  echo "Existing $ENV_FILE detected; ENV_OVERWRITE disabled, skipping update"
 fi
 
 # Systemd unit
