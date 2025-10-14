@@ -44,14 +44,16 @@ is_enabled() {
   esac
 }
 
-# Build as the non-root repo owner when possible
-if [ -f "$ROOT_DIR/.git" ]; then
-  REPO_OWNER=$(stat -c '%U' "$ROOT_DIR")
+# Choose a non-root user for building when possible
+if [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ]; then
+  BUILD_USER="$SUDO_USER"
+elif [ -f "$ROOT_DIR/.git" ]; then
+  BUILD_USER=$(stat -c '%U' "$ROOT_DIR")
 else
-  REPO_OWNER=$(whoami)
+  BUILD_USER=$(whoami)
 fi
 
-echo "Building release (as user: $REPO_OWNER)"
+echo "Building release (as user: $BUILD_USER)"
 ## Auto-detect OS and install packages (Debian/apt)
 if [ -f /etc/debian_version ]; then
   if is_enabled "$APT_INSTALL"; then
@@ -75,17 +77,24 @@ if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
   sudo useradd --system --create-home --home-dir "$INSTALL_DIR" --shell /usr/sbin/nologin "$SERVICE_USER" || true
 fi
 
-# Ensure rustup/cargo is available for the repo owner; install rustup if missing
-if ! sudo -u "$REPO_OWNER" -H bash -lc 'command -v cargo >/dev/null 2>&1'; then
-  echo "Installing rustup for user $REPO_OWNER"
-  sudo -u "$REPO_OWNER" -H bash -lc 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+# Ensure rustup/cargo is available for the build user; install rustup if missing
+if [ "$BUILD_USER" = "root" ]; then
+  if ! bash -lc 'source "$HOME/.cargo/env" 2>/dev/null || true; command -v cargo >/dev/null 2>&1'; then
+    echo "Installing rustup for user root"
+    bash -lc 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+  fi
+else
+  if ! sudo -u "$BUILD_USER" -H bash -lc 'source "$HOME/.cargo/env" 2>/dev/null || true; command -v cargo >/dev/null 2>&1'; then
+    echo "Installing rustup for user $BUILD_USER"
+    sudo -u "$BUILD_USER" -H bash -lc 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
+  fi
 fi
 
-echo "Building release (as user: $REPO_OWNER)"
-if [ "$(id -u)" -eq 0 ] && [ "$REPO_OWNER" != "root" ]; then
-  sudo -u "$REPO_OWNER" -H bash -lc "export PATH=\"\$HOME/.cargo/bin:\$PATH\"; cd '$ROOT_DIR' && cargo build --release"
+echo "Building release (as user: $BUILD_USER)"
+if [ "$(id -u)" -eq 0 ] && [ "$BUILD_USER" != "root" ]; then
+  sudo -u "$BUILD_USER" -H bash -lc "source \"\$HOME/.cargo/env\" 2>/dev/null || true; export PATH=\"\$HOME/.cargo/bin:\$PATH\"; cd '$ROOT_DIR' && cargo build --release"
 else
-  (cd "$ROOT_DIR" && cargo build --release)
+  bash -lc "source \"\$HOME/.cargo/env\" 2>/dev/null || true; export PATH=\"\$HOME/.cargo/bin:\$PATH\"; cd '$ROOT_DIR' && cargo build --release"
 fi
 
 # Determine which binary to install
