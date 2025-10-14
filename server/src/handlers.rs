@@ -22,6 +22,9 @@ use ping0::templates::{IndexTemplate, ResultTemplate, ImageOgTemplate, FileInfoT
 use sha2::{Digest, Sha256};
 use rand::{distributions::Alphanumeric, Rng};
 
+#[derive(Deserialize)]
+pub struct CodeParams { pub code: String }
+
 // Utility to extract the admin cookie token
 fn extract_admin_token(cookie: Option<TypedHeader<Cookie>>) -> Option<String> {
     cookie
@@ -380,7 +383,7 @@ pub async fn admin_items(State(state): State<AppState>, cookie: Option<TypedHead
 #[debug_handler]
 pub async fn admin_delete_item(
     State(state): State<AppState>,
-    Path(code): Path<String>, // Using Path directly
+    Path(CodeParams { code }): Path<CodeParams>,
     cookie: Option<TypedHeader<Cookie>>,
 ) -> Response {
     if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
