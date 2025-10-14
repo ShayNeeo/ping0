@@ -157,7 +157,7 @@ if [ ! -f "$ENV_FILE" ]; then
   echo "Writing $ENV_FILE"
   sudo tee "$ENV_FILE" > /dev/null <<ENVV
 HOST=0.0.0.0
-PORT=8080
+PORT=10105
 BASE_URL=https://0.id.vn
 DATABASE_PATH=$DATA_DIR/ping0.db
 ENVV
@@ -218,7 +218,7 @@ server {
     add_header X-Frame-Options DENY;
 
     location / {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:10105;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
