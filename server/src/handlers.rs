@@ -276,7 +276,13 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
                 let mime = mime_from_path(filename).first_or_octet_stream();
                 if ["jpg","jpeg","png","gif","webp","svg"].iter().any(|e| e.eq_ignore_ascii_case(ext)) {
                     let image_url = format!("{}/files/{}", state.base_url, filename);
-                    let tpl = ImageOgTemplate { image_url };
+                    let page_url = format!("{}/s/{}", state.base_url, code);
+                    let tpl = ImageOgTemplate { 
+                        image_url, 
+                        page_url, 
+                        title: "Shared Image".to_string(), 
+                        description: "Shared via o.id.vn".to_string(),
+                    };
                     return Html(tpl.render().unwrap_or_else(|_| "Template error".to_string())).into_response();
                 }
                 let filename_display = StdPath::new(filename).file_name().and_then(|f| f.to_str()).unwrap_or(filename).to_string();

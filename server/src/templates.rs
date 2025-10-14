@@ -65,14 +65,25 @@ pub struct ResultTemplate { pub code: String, pub short_link: String, pub qr_svg
 <html>
   <head>
     <meta charset="utf-8">
-    <title>Shared Image</title>
+    <title>{{ title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="canonical" href="{{ page_url }}">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="o.id.vn">
+    <meta property="og:title" content="{{ title }}">
+    <meta property="og:description" content="{{ description }}">
+    <meta property="og:url" content="{{ page_url }}">
     <meta property="og:image" content="{{ image_url }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="{{ title }}">
+    <meta name="twitter:description" content="{{ description }}">
+    <meta name="twitter:image" content="{{ image_url }}">
   </head>
   <body style="font-family:Courier New,monospace;background:#fff;color:#000;text-align:center">
-    <img src="{{ image_url }}" style="max-width:95vw;max-height:90vh">
+    <img src="{{ image_url }}" alt="{{ title }}" style="max-width:95vw;max-height:90vh">
   </body>
  </html>"#, ext = "html")]
-pub struct ImageOgTemplate { pub image_url: String }
+pub struct ImageOgTemplate { pub image_url: String, pub page_url: String, pub title: String, pub description: String }
 
 #[derive(Template)]
 #[template(source = r#"<!DOCTYPE html>
