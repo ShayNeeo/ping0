@@ -1,6 +1,7 @@
 // The final, corrected handlers.rs file
 
-use axum::extract::{Form, Multipart, Path, Query, State, TypedHeader};
+use axum::extract::{Form, Multipart, Path, Query, State};
+use axum_extra::typed_header::TypedHeader;
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::Json;
