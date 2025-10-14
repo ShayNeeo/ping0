@@ -1,11 +1,10 @@
-// I've removed the unused imports `Parts` and `async_trait` from here.
-use axum::extract::{Form, Multipart, Path as AxumPath, Query, State, TypedHeader};
+// The final, corrected handlers.rs file
+
+use axum::extract::{Form, Multipart, Path, Query, State, TypedHeader};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{Html, IntoResponse, Redirect, Response};
-// use axum::http::request::Parts; // <-- REMOVED
-// use axum::async_trait; // <-- REMOVED
 use axum::Json;
-use axum::debug_handler; // It's good practice to import the macro
+use axum::debug_handler;
 use headers::Cookie;
 use mime_guess::from_path as mime_from_path;
 use nanoid::nanoid;
@@ -13,7 +12,7 @@ use qrcode::render::svg::Color;
 use qrcode::QrCode;
 use rusqlite::{params, Connection};
 use serde::Deserialize;
-use std::path::{Path, PathBuf};
+use std::path::{Path as StdPath}; // Use StdPath to avoid conflict with axum::extract::Path
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
@@ -48,8 +47,6 @@ pub struct AppState { pub db_path: String, pub base_url: String }
 #[derive(Deserialize)]
 pub struct LinkRequest { pub link: String, pub qr: Option<String> }
 
-fn get_base_url() -> String { std::env::var("BASE_URL").unwrap_or_else(|_| "https://0.id.vn".to_string()) }
-
 fn is_allowed_extension(ext: &str) -> bool {
     ALLOWED_EXTENSIONS.iter().any(|&allowed| allowed.eq_ignore_ascii_case(ext))
 }
@@ -67,19 +64,17 @@ pub async fn upload_handler(State(state): State<AppState>, mut multipart: Multip
         let name = field.name().unwrap_or("");
         if name == "file" {
             let filename = field.file_name().unwrap_or("file").to_string();
-            
-            // Validate file extension
-            let ext = Path::new(&filename)
+
+            let ext = StdPath::new(&filename)
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("bin");
-            
+
             if !is_allowed_extension(ext) {
                 tracing::warn!("Rejected file with extension: {}", ext);
                 return (StatusCode::BAD_REQUEST, format!("File type '.{}' not allowed", ext));
             }
-            
-            // Stream to disk with size limit
+
             let id = Uuid::new_v4();
             let filename_saved = format!("{}.{}", id, ext);
             let path = format!("uploads/{}", filename_saved);
@@ -107,8 +102,7 @@ pub async fn upload_handler(State(state): State<AppState>, mut multipart: Multip
                     return (StatusCode::INTERNAL_SERVER_ERROR, "Failed to save file".to_string());
                 }
             }
-            
-            // Save mapping in DB with a fresh shortcode
+
             let short_code = nanoid!(8);
             let original = format!("file:{}", filename_saved);
             let conn = Connection::open(&state.db_path).unwrap();
@@ -148,8 +142,7 @@ pub async fn link_handler(State(state): State<AppState>, Form(req): Form<LinkReq
     if req.link.is_empty() {
         return (StatusCode::BAD_REQUEST, "No link provided".to_string());
     }
-    
-    // Basic URL validation
+
     if !req.link.starts_with("http://") && !req.link.starts_with("https://") {
         return (StatusCode::BAD_REQUEST, "Invalid URL format. Must start with http:// or https://".to_string());
     }
@@ -189,11 +182,7 @@ pub async fn link_handler(State(state): State<AppState>, Form(req): Form<LinkReq
 
 pub async fn index_handler() -> Html<String> { Html(IndexTemplate.render().unwrap_or_else(|_| "Template error".to_string())) }
 
-#[derive(Deserialize)]
-pub struct SubmitForm { pub link: Option<String>, pub qr: Option<String> }
-
 pub async fn submit_handler(State(state): State<AppState>, mut multipart: Multipart) -> axum::response::Response {
-    // Try to parse multipart fields manually to support both link and file in one form
     let mut link_value: Option<String> = None;
     let mut file_bytes: Option<(String, Vec<u8>)> = None;
     let mut want_qr: bool = false;
@@ -214,9 +203,8 @@ pub async fn submit_handler(State(state): State<AppState>, mut multipart: Multip
         }
     }
 
-    // If file present, prioritize file upload mapping
     if let Some((filename, data)) = file_bytes {
-        let ext = Path::new(&filename).extension().and_then(|e| e.to_str()).unwrap_or("bin");
+        let ext = StdPath::new(&filename).extension().and_then(|e| e.to_str()).unwrap_or("bin");
         if !is_allowed_extension(ext) { return (StatusCode::BAD_REQUEST, "File type not allowed".to_string()).into_response(); }
         if data.len() > MAX_FILE_SIZE { return (StatusCode::PAYLOAD_TOO_LARGE, "File too large".to_string()).into_response(); }
 
@@ -234,7 +222,6 @@ pub async fn submit_handler(State(state): State<AppState>, mut multipart: Multip
         return Redirect::to(&redirect_to).into_response();
     }
 
-    // Else if link provided, validate and create mapping
     if let Some(link) = link_value {
         if !link.starts_with("http://") && !link.starts_with("https://") { return (StatusCode::BAD_REQUEST, "Invalid URL format".to_string()).into_response(); }
         let short_code = nanoid!(8);
@@ -247,7 +234,7 @@ pub async fn submit_handler(State(state): State<AppState>, mut multipart: Multip
     (StatusCode::BAD_REQUEST, "Provide a URL or a file".to_string()).into_response()
 }
 
-pub async fn result_handler(State(state): State<AppState>, AxumPath(code): AxumPath<String>, Query(q): Query<std::collections::HashMap<String,String>>) -> Html<String> {
+pub async fn result_handler(State(state): State<AppState>, Path(code): Path<String>, Query(q): Query<std::collections::HashMap<String,String>>) -> Html<String> {
     let conn = Connection::open(&state.db_path).unwrap();
     let mut stmt = conn.prepare("SELECT kind, value FROM items WHERE code = ?1").unwrap();
     let row = stmt.query_row(params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)));
@@ -269,8 +256,7 @@ pub async fn result_handler(State(state): State<AppState>, AxumPath(code): AxumP
     Html(tpl.render().unwrap_or_else(|_| "Template error".to_string()))
 }
 
-pub async fn short_handler(State(state): State<AppState>, AxumPath(code): AxumPath<String>) -> axum::response::Response {
-    // Query DB in a separate scope so non-Send types are dropped before any await
+pub async fn short_handler(State(state): State<AppState>, Path(code): Path<String>) -> axum::response::Response {
     let (kind, value) = {
         let conn = Connection::open(&state.db_path).unwrap();
         let mut stmt = conn.prepare("SELECT kind, value FROM items WHERE code = ?1").unwrap();
@@ -282,16 +268,14 @@ pub async fn short_handler(State(state): State<AppState>, AxumPath(code): AxumPa
         "url" => Redirect::permanent(&value).into_response(),
         "file" => {
             let filename = value.strip_prefix("file:").unwrap_or(&value);
-            if let Some(ext) = Path::new(filename).extension().and_then(|e| e.to_str()) {
+            if let Some(ext) = StdPath::new(filename).extension().and_then(|e| e.to_str()) {
                 let mime = mime_from_path(filename).first_or_octet_stream();
                 if ["jpg","jpeg","png","gif","webp","svg"].iter().any(|e| e.eq_ignore_ascii_case(ext)) {
-                    // Render OG meta page for image
                     let image_url = format!("{}/files/{}", state.base_url, filename);
                     let tpl = ImageOgTemplate { image_url };
                     return Html(tpl.render().unwrap_or_else(|_| "Template error".to_string())).into_response();
                 }
-                // Non-image: render info page with download link
-                let filename_display = Path::new(filename).file_name().and_then(|f| f.to_str()).unwrap_or(filename).to_string();
+                let filename_display = StdPath::new(filename).file_name().and_then(|f| f.to_str()).unwrap_or(filename).to_string();
                 let file_url = format!("{}/files/{}", state.base_url, filename);
                 let tpl = FileInfoTemplate { filename: filename_display, file_url, mime: mime.to_string() };
                 return Html(tpl.render().unwrap_or_else(|_| "Template error".to_string())).into_response();
@@ -301,8 +285,6 @@ pub async fn short_handler(State(state): State<AppState>, AxumPath(code): AxumPa
         _ => (StatusCode::NOT_FOUND, "Not found").into_response(),
     }
 }
-
-// ---------- Admin auth and DB management ----------
 
 fn hash_with_salt(password: &str, salt: &str) -> String {
     let mut hasher = Sha256::new();
@@ -343,19 +325,16 @@ pub async fn admin_login_post(State(state): State<AppState>, Form(f): Form<Admin
     let conn = Connection::open(&state.db_path).unwrap();
     let count: i64 = conn.query_row("SELECT COUNT(*) FROM admin", [], |r| r.get(0)).unwrap_or(0);
     if count == 0 {
-        // First-time setup: create admin
         let salt = generate_token(16);
         let hash = hash_with_salt(&f.password, &salt);
         let _ = conn.execute("INSERT INTO admin (id, username, password_hash, salt) VALUES (1, ?1, ?2, ?3)", params![f.username, hash, salt]);
     }
-    // Authenticate
     let row = conn
         .prepare("SELECT password_hash, salt FROM admin WHERE username = ?1")
         .and_then(|mut s| s.query_row(params![f.username], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))));
     let (hash, salt) = match row { Ok(v) => v, Err(_) => return (StatusCode::UNAUTHORIZED, "Invalid credentials").into_response() };
     if hash != hash_with_salt(&f.password, &salt) { return (StatusCode::UNAUTHORIZED, "Invalid credentials").into_response(); }
 
-    // Issue session
     let token = generate_token(48);
     let _ = conn.execute("INSERT INTO sessions (token, created_at) VALUES (?1, strftime('%s','now'))", params![token.clone()]);
     let mut headers = HeaderMap::new();
@@ -396,11 +375,11 @@ pub async fn admin_items(State(state): State<AppState>, cookie: Option<TypedHead
     Html(AdminItemsTemplate { items }.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
-// THE FIX IS HERE
+// THIS IS THE RESTORED AND CORRECTED FUNCTION
 #[debug_handler]
 pub async fn admin_delete_item(
     State(state): State<AppState>,
-    AxumPath(code): AxumPath<String>,
+    Path(code): Path<String>, // Using Path directly
     cookie: Option<TypedHeader<Cookie>>,
 ) -> Response {
     if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
@@ -408,15 +387,19 @@ pub async fn admin_delete_item(
     }
     let conn = Connection::open(&state.db_path).unwrap();
     if let Ok((kind, value)) = conn.query_row("SELECT kind, value FROM items WHERE code = ?1", params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
-        if kind == "file" { if let Some(fname) = value.strip_prefix("file:") { let _ = tokio::fs::remove_file(PathBuf::from("uploads").join(fname)).await; } }
+        if kind == "file" {
+            if let Some(fname) = value.strip_prefix("file:") {
+                // We need a PathBuf to join
+                let path_to_delete = std::path::PathBuf::from("uploads").join(fname);
+                let _ = tokio::fs::remove_file(path_to_delete).await;
+            }
+        }
     }
     let _ = conn.execute("DELETE FROM items WHERE code = ?1", params![code]);
     Redirect::to("/admin/items").into_response()
 }
 
-// SPA contract: POST /api/upload (multipart/form-data)
-// fields: content (URL string or file), qr_required ("true"|"false")
-// returns: { success: bool, short_url?: string, qr_code_data?: string|null, error?: string }
+
 #[debug_handler]
 pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart) -> axum::response::Response {
     let mut link_value: Option<String> = None;
@@ -428,8 +411,7 @@ pub async fn api_upload(State(state): State<AppState>, mut multipart: Multipart)
         match name {
             "content" => {
                 if let Some(fname) = field.file_name().map(|s| s.to_string()) {
-                    // file upload: stream to disk with limit
-                    let ext = Path::new(&fname).extension().and_then(|e| e.to_str()).unwrap_or("bin");
+                    let ext = StdPath::new(&fname).extension().and_then(|e| e.to_str()).unwrap_or("bin");
                     if !is_allowed_extension(ext) { return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"success": false, "error": "File type not allowed"}))).into_response(); }
                     if let Err(e) = fs::create_dir_all("uploads").await { tracing::error!("create uploads dir: {}", e); return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"success": false, "error": "Server error"}))).into_response(); }
                     let id = Uuid::new_v4();
