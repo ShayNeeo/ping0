@@ -74,22 +74,16 @@ pub struct ResultTemplate { pub code: String, pub short_link: String, pub qr_svg
     <meta property="og:description" content="{{ description }}">
     <meta property="og:url" content="{{ page_url }}">
     <meta property="og:image" content="{{ image_url }}">
-    <meta property="og:image:secure_url" content="{{ image_url }}">
-    <meta property="og:image:type" content="{{ image_type }}">
-    <meta property="og:image:width" content="{{ image_width }}">
-    <meta property="og:image:height" content="{{ image_height }}">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ title }}">
     <meta name="twitter:description" content="{{ description }}">
     <meta name="twitter:image" content="{{ image_url }}">
   </head>
   <body style="font-family:Courier New,monospace;background:#fff;color:#000;text-align:center">
-    <a href="{{ original_url }}" target="_blank" rel="noopener">
-      <img src="{{ original_url }}" alt="{{ title }}" style="max-width:98vw;max-height:95vh;object-fit:contain">
-    </a>
+    <img src="{{ image_url }}" alt="{{ title }}" style="max-width:95vw;max-height:90vh">
   </body>
  </html>"#, ext = "html")]
-pub struct ImageOgTemplate { pub image_url: String, pub original_url: String, pub page_url: String, pub title: String, pub description: String, pub image_width: u32, pub image_height: u32, pub image_type: String }
+pub struct ImageOgTemplate { pub image_url: String, pub page_url: String, pub title: String, pub description: String }
 
 #[derive(Template)]
 #[template(source = r#"<!DOCTYPE html>
