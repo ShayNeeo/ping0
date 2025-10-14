@@ -269,7 +269,6 @@ pub async fn short_handler(State(state): State<AppState>, AxumPath(code): AxumPa
         "url" => Redirect::permanent(&value).into_response(),
         "file" => {
             let filename = value.strip_prefix("file:").unwrap_or(&value);
-            let file_path = PathBuf::from("uploads").join(filename);
             if let Some(ext) = Path::new(filename).extension().and_then(|e| e.to_str()) {
                 let mime = mime_from_path(filename).first_or_octet_stream();
                 if ["jpg","jpeg","png","gif","webp","svg"].iter().any(|e| e.eq_ignore_ascii_case(ext)) {
@@ -372,19 +371,19 @@ pub async fn admin_logout(State(state): State<AppState>, headers_in: HeaderMap) 
     (headers, Redirect::to("/admin/login")).into_response()
 }
 
-pub async fn admin_home(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+pub async fn admin_home(State(state): State<AppState>, headers: HeaderMap) -> axum::response::Response {
     if !require_admin(&state.db_path, &headers).await { return Redirect::to("/admin/login").into_response(); }
-    Html(AdminHomeTemplate.render().unwrap_or_else(|_| "Template error".to_string()))
+    Html(AdminHomeTemplate.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
-pub async fn admin_items(State(state): State<AppState>, headers: HeaderMap) -> impl IntoResponse {
+pub async fn admin_items(State(state): State<AppState>, headers: HeaderMap) -> axum::response::Response {
     if !require_admin(&state.db_path, &headers).await { return Redirect::to("/admin/login").into_response(); }
     let conn = Connection::open(&state.db_path).unwrap();
     let mut stmt = conn.prepare("SELECT code, kind, value, created_at FROM items ORDER BY created_at DESC LIMIT 500").unwrap();
     let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?))).unwrap();
     let mut items: Vec<(String, String, String, i64)> = Vec::new();
     for row in rows { if let Ok(rec) = row { items.push(rec); } }
-    Html(AdminItemsTemplate { items }.render().unwrap_or_else(|_| "Template error".to_string()))
+    Html(AdminItemsTemplate { items }.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
 pub async fn admin_delete_item(State(state): State<AppState>, headers: HeaderMap, AxumPath(code): AxumPath<String>) -> impl IntoResponse {
