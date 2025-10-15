@@ -341,22 +341,28 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
                 if is_image_ext(ext) || ext.eq_ignore_ascii_case("svg") {
                     let page_url = format!("{}/s/{}", state.base_url, code);
                     let image_url_full = format!("{}/files/{}", state.base_url, filename);
-                    // Generate preview for raster images (skip svg)
+                    // For raster images: if original <= 2MB, use original; else generate a preview
                     let og_image_url = if !ext.eq_ignore_ascii_case("svg") {
-                        let preview_dir = StdPath::new("uploads").join("previews");
-                        let preview_name = make_preview_filename(filename);
-                        let preview_fs_path = preview_dir.join(&preview_name);
-                        let preview_web_path = format!("previews/{}", preview_name);
-                        // Ensure dir exists and file generated if not present
-                        if !preview_fs_path.exists() {
-                            let _ = std::fs::create_dir_all(&preview_dir);
-                            let original_fs_path = StdPath::new("uploads").join(filename);
-                            let _ = try_generate_preview(&original_fs_path, &preview_fs_path);
-                        }
-                        if preview_fs_path.exists() {
-                            format!("{}/files/{}", state.base_url, preview_web_path)
-                        } else {
+                        let original_fs_path = StdPath::new("uploads").join(filename);
+                        let original_is_small = std::fs::metadata(&original_fs_path)
+                            .map(|m| m.len() as usize <= TWO_MB)
+                            .unwrap_or(false);
+                        if original_is_small {
                             image_url_full.clone()
+                        } else {
+                            let preview_dir = StdPath::new("uploads").join("previews");
+                            let preview_name = make_preview_filename(filename);
+                            let preview_fs_path = preview_dir.join(&preview_name);
+                            let preview_web_path = format!("previews/{}", preview_name);
+                            if !preview_fs_path.exists() {
+                                let _ = std::fs::create_dir_all(&preview_dir);
+                                let _ = try_generate_preview(&original_fs_path, &preview_fs_path);
+                            }
+                            if preview_fs_path.exists() {
+                                format!("{}/files/{}", state.base_url, preview_web_path)
+                            } else {
+                                image_url_full.clone()
+                            }
                         }
                     } else {
                         // For SVG use the original (usually tiny)
