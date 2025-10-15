@@ -499,21 +499,33 @@ pub async fn admin_delete_item(
     if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
         return Redirect::to("/admin/login").into_response();
     }
-    let conn = Connection::open(&state.db_path).unwrap();
-    if let Ok((kind, value)) = conn.query_row("SELECT kind, value FROM items WHERE code = ?1", params![code.clone()], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
+    // Query needed info inside a short-lived DB connection (avoid holding Connection across awaits)
+    let kind_value: Option<(String, String)> = {
+        let conn = Connection::open(&state.db_path).unwrap();
+        conn.query_row(
+            "SELECT kind, value FROM items WHERE code = ?1",
+            params![code.clone()],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+        ).ok()
+    };
+
+    if let Some((kind, value)) = kind_value {
         if kind == "file" {
             if let Some(fname) = value.strip_prefix("file:") {
-                // We need a PathBuf to join
                 let path_to_delete = std::path::PathBuf::from("uploads").join(fname);
                 let _ = tokio::fs::remove_file(&path_to_delete).await;
-                // Also remove preview if exists
                 let preview_name = make_preview_filename(fname);
                 let preview_path = std::path::PathBuf::from("uploads").join("previews").join(preview_name);
                 let _ = tokio::fs::remove_file(preview_path).await;
             }
         }
     }
-    let _ = conn.execute("DELETE FROM items WHERE code = ?1", params![code]);
+
+    // Now delete the DB row in a fresh connection
+    {
+        let conn = Connection::open(&state.db_path).unwrap();
+        let _ = conn.execute("DELETE FROM items WHERE code = ?1", params![code]);
+    }
     Redirect::to("/admin/items").into_response()
 }
 
