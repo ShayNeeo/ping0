@@ -219,51 +219,6 @@ pub struct AdminHomeTemplate;
     </main>
   </body>
 </html>"#, ext = "html")]
-pub struct AdminItem { pub code: String, pub kind: String, pub value: String, pub created_at: i64, pub mime: Option<String> }
-
-#[derive(Template)]
-#[template(source = r#"<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <title>Items</title>
-    <style>
-      body{font-family:Courier New,monospace;background:#fff;color:#000}
-      main{max-width:900px;margin:2rem auto}
-      table{width:100%;border-collapse:collapse}
-      th,td{border:1px solid #000;padding:6px;text-align:left}
-      a,button{color:#000}
-      form{display:inline}
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>Items</h1>
-      <p>
-        <a href="/admin">Home</a>
-        <span> · </span>
-        <form action="/admin/logout" method="post"><button type="submit">Logout</button></form>
-      </p>
-      <table>
-        <thead>
-          <tr><th>Code</th><th>Kind</th><th>Type</th><th>Value</th><th>When</th><th>Actions</th></tr>
-        </thead>
-        <tbody>
-        {% for item in items %}
-          <tr>
-            <td><a href="/s/{{ item.code }}" target="_blank">{{ item.code }}</a></td>
-            <td>{{ item.kind }}</td>
-            <td>{{ item.mime.as_deref().unwrap_or("-") }}</td>
-            <td style="max-width:420px;word-break:break-all">{{ item.value }}</td>
-            <td>{{ item.created_at }}</td>
-            <td>
-              <form action="/admin/items/{{ item.code }}/delete" method="post" onsubmit="return confirm('Delete {{ item.code }}?')"><button type="submit">Delete</button></form>
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </main>
-  </body>
-</html>"#, ext = "html")]
 pub struct AdminItemsTemplate { pub items: Vec<AdminItem> }
+
+pub struct AdminItem { pub code: String, pub kind: String, pub value: String, pub created_at: i64, pub mime: Option<String> }
