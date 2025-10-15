@@ -30,6 +30,17 @@ NGINX_SITE_PATH=${NGINX_SITE_PATH:-/etc/nginx/sites-available/$SERVICE_NAME}
 APP_PORT=${APP_PORT:-10105}
 ENV_OVERWRITE=${ENV_OVERWRITE:-1}
 
+# API/TLS settings
+API_DOMAIN=${API_DOMAIN:-$NGINX_SERVER_NAME}
+# Whether the API DNS is proxied behind Cloudflare (orange cloud)
+# If enabled and CERTBOT is enabled, we will use DNS-01 with Cloudflare.
+PROXIED_API=${PROXIED_API:-0}
+CERTBOT_ENABLE=${CERTBOT_ENABLE:-1}
+CERTBOT_EMAIL=${CERTBOT_EMAIL:-}
+# Cloudflare API token for DNS-01 (scoped to zone DNS edit)
+CF_API_TOKEN=${CF_API_TOKEN:-}
+CERTBOT_DNS_PROPAGATION=${CERTBOT_DNS_PROPAGATION:-60}
+
 # Feature flags (1/true/yes to enable)
 APT_INSTALL=${APT_INSTALL:-1}
 SYSTEMD_ENABLE=${SYSTEMD_ENABLE:-1}
@@ -62,7 +73,7 @@ if [ -f /etc/debian_version ]; then
     echo "Detected Debian-based OS. Installing system packages via apt..."
     APT_PKGS="build-essential pkg-config libsqlite3-dev ca-certificates curl git"
     if is_enabled "$NGINX_ENABLE"; then
-      APT_PKGS="$APT_PKGS nginx ufw"
+      APT_PKGS="$APT_PKGS nginx ufw certbot python3-certbot-nginx python3-certbot-dns-cloudflare"
     fi
     sudo apt-get update
     sudo apt-get install -y --no-install-recommends $APT_PKGS || true
@@ -154,6 +165,55 @@ if is_enabled "$NGINX_ENABLE"; then
   sudo chmod 700 "$CF_SSL_DIR"
 fi
 
+# Obtain Let's Encrypt certificate (optional, before nginx site is active)
+obtain_certbot_cert() {
+  local domain="$1"
+  local email="$2"
+  local proxied="$3"
+  local have_cert=0
+  if [ -f "/etc/letsencrypt/live/$domain/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/$domain/privkey.pem" ]; then
+    have_cert=1
+  fi
+  if [ $have_cert -eq 1 ]; then
+    echo "Let's Encrypt cert already present for $domain"
+    return 0
+  fi
+  if ! is_enabled "$CERTBOT_ENABLE"; then
+    echo "CERTBOT_ENABLE=0; skipping Let's Encrypt issuance"
+    return 0
+  fi
+  if [ -z "$email" ]; then
+    echo "WARN: CERTBOT_EMAIL is empty; skipping Let's Encrypt issuance"
+    return 0
+  fi
+  echo "Attempting Let's Encrypt issuance for $domain"
+  if is_enabled "$proxied"; then
+    if [ -z "$CF_API_TOKEN" ]; then
+      echo "WARN: PROXIED_API=1 but CF_API_TOKEN not set; cannot perform DNS-01. Skipping LE issuance."
+      return 0
+    fi
+    echo "Using DNS-01 with Cloudflare for $domain"
+    sudo mkdir -p /root/.secrets/certbot
+    local cf_ini="/root/.secrets/certbot/cloudflare.ini"
+    sudo bash -c "umask 077 && echo 'dns_cloudflare_api_token=$CF_API_TOKEN' > '$cf_ini'"
+    sudo certbot certonly \
+      --non-interactive --agree-tos -m "$email" \
+      --dns-cloudflare --dns-cloudflare-credentials "$cf_ini" \
+      --dns-cloudflare-propagation-seconds "$CERTBOT_DNS_PROPAGATION" \
+      -d "$domain" || true
+  else
+    echo "Using standalone HTTP-01 for $domain (temporarily binding :80)"
+    # Try to stop nginx if it is running
+    if command -v nginx >/dev/null 2>&1; then
+      sudo systemctl stop nginx || true
+    fi
+    sudo certbot certonly --standalone \
+      --non-interactive --agree-tos -m "$email" \
+      --preferred-challenges http \
+      -d "$domain" || true
+  fi
+}
+
 # Write (or update) env file for systemd
 write_env_file() {
   sudo tee "$ENV_FILE" > /dev/null <<ENVV
@@ -205,6 +265,21 @@ fi
 
 ### Nginx site setup (optional)
 if is_enabled "$NGINX_ENABLE"; then
+  # Try to obtain LE cert upfront (no nginx port conflicts if using standalone)
+  obtain_certbot_cert "$API_DOMAIN" "$CERTBOT_EMAIL" "$PROXIED_API"
+
+  # Choose TLS cert/key paths
+  TLS_CERT_PATH="/etc/letsencrypt/live/${API_DOMAIN}/fullchain.pem"
+  TLS_KEY_PATH="/etc/letsencrypt/live/${API_DOMAIN}/privkey.pem"
+  if [ ! -f "$TLS_CERT_PATH" ] || [ ! -f "$TLS_KEY_PATH" ]; then
+    # Fallback to Cloudflare Origin certs if LE is not available
+    TLS_CERT_PATH="$CF_SSL_DIR/${NGINX_SERVER_NAME}.crt"
+    TLS_KEY_PATH="$CF_SSL_DIR/${NGINX_SERVER_NAME}.key"
+    echo "Using TLS from $TLS_CERT_PATH (LE not found)"
+  else
+    echo "Using Let's Encrypt cert at $TLS_CERT_PATH"
+  fi
+
   echo "Generating nginx site config for $NGINX_SERVER_NAME"
   sudo tee "$NGINX_SITE_PATH" > /dev/null <<NGX
 server {
@@ -218,12 +293,12 @@ server {
     http2 on;
     server_name ${NGINX_SERVER_NAME};
 
-    ssl_certificate $CF_SSL_DIR/${NGINX_SERVER_NAME}.crt;
-    ssl_certificate_key $CF_SSL_DIR/${NGINX_SERVER_NAME}.key;
+    ssl_certificate $TLS_CERT_PATH;
+    ssl_certificate_key $TLS_KEY_PATH;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_prefer_server_ciphers off;
 
-    client_max_body_size 12M;
+    client_max_body_size 1024M;
 
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
     add_header X-Content-Type-Options nosniff;
@@ -243,10 +318,10 @@ NGX
   echo "Enabling nginx site"
   sudo ln -sf "$NGINX_SITE_PATH" "/etc/nginx/sites-enabled/$SERVICE_NAME"
 
-  if [ -f "$CF_SSL_DIR/${NGINX_SERVER_NAME}.crt" ]; then
-    echo "Found origin cert for ${NGINX_SERVER_NAME}"
+  if [[ "$TLS_CERT_PATH" == *"letsencrypt"* ]]; then
+    echo "Let's Encrypt cert configured for ${NGINX_SERVER_NAME}"
   else
-    echo "Warning: origin cert $CF_SSL_DIR/${NGINX_SERVER_NAME}.crt not found. Place your Cloudflare Origin certificate or adjust nginx config." >&2
+    echo "Warning: Using fallback TLS at $TLS_CERT_PATH. Consider enabling CERTBOT or placing Cloudflare Origin certs." >&2
   fi
 
   echo "Testing nginx configuration"
