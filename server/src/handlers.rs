@@ -19,8 +19,7 @@ use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 use askama::Template;
 use ping0::templates::{IndexTemplate, ResultTemplate, ImageOgTemplate, FileInfoTemplate, AdminLoginTemplate, AdminHomeTemplate, AdminItemsTemplate, AdminItem};
-use image::{imageops::FilterType, DynamicImage, ImageOutputFormat};
-use std::path::PathBuf;
+use image::{imageops::FilterType, DynamicImage, ImageOutputFormat, GenericImageView};
 use sha2::{Digest, Sha256};
 use rand::{distributions::Alphanumeric, Rng};
 
@@ -495,10 +494,9 @@ pub async fn admin_items(State(state): State<AppState>, cookie: Option<TypedHead
 #[debug_handler]
 pub async fn admin_delete_item(
     State(state): State<AppState>,
-    params: Path<CodeParams>,
+    Path(CodeParams { code }): Path<CodeParams>,
     cookie: Option<TypedHeader<Cookie>>,
-) -> Response {
-    let CodeParams { code } = params.0;
+) -> impl IntoResponse {
     if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
         return Redirect::to("/admin/login").into_response();
     }
