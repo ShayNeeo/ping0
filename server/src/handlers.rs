@@ -57,7 +57,8 @@ const ALLOWED_EXTENSIONS: &[&str] = &[
 
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "avif"];
 
-const TWO_MB: usize = 2 * 1024 * 1024;
+// Preview target size: strictly under 1 MiB
+const PREVIEW_MAX_BYTES: usize = 1 * 1024 * 1024;
 
 // ensure_dir was unused; removed to avoid dead_code warning
 
@@ -97,7 +98,7 @@ fn encode_jpeg_under_limit(img: &DynamicImage, max_bytes: usize) -> Option<Vec<u
 
 fn try_generate_preview(original_path: &StdPath, preview_path: &StdPath) -> Result<(), String> {
     let img = image::open(original_path).map_err(|e| format!("open image: {}", e))?;
-    match encode_jpeg_under_limit(&img, TWO_MB) {
+    match encode_jpeg_under_limit(&img, PREVIEW_MAX_BYTES) {
         Some(bytes) => std::fs::write(preview_path, &bytes).map_err(|e| format!("write preview: {}", e)),
         None => {
             // Fallback: write medium quality JPEG
@@ -341,11 +342,11 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
                 if is_image_ext(ext) || ext.eq_ignore_ascii_case("svg") {
                     let page_url = format!("{}/s/{}", state.base_url, code);
                     let image_url_full = format!("{}/files/{}", state.base_url, filename);
-                    // For raster images: if original <= 2MB, use original; else generate a preview
+                    // For raster images: if original <= 1MB, use original; else generate a preview
                     let og_image_url = if !ext.eq_ignore_ascii_case("svg") {
                         let original_fs_path = StdPath::new("uploads").join(filename);
                         let original_is_small = std::fs::metadata(&original_fs_path)
-                            .map(|m| m.len() as usize <= TWO_MB)
+                            .map(|m| m.len() as usize <= PREVIEW_MAX_BYTES)
                             .unwrap_or(false);
                         if original_is_small {
                             image_url_full.clone()
@@ -377,6 +378,13 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
                         .to_ascii_lowercase();
                     let wants_html = accept.contains("text/html");
                     if !wants_html {
+                        // For non-HTML (e.g., direct image fetch), stream the file instead of redirecting to avoid user-agent caching/transform issues
+                        let fs_path = StdPath::new("uploads").join(filename);
+                        if let Ok(bytes) = std::fs::read(&fs_path) {
+                            let mut resp = axum::response::Response::new(bytes.into());
+                            resp.headers_mut().insert(axum::http::header::CONTENT_TYPE, axum::http::HeaderValue::from_str(mime.as_ref()).unwrap_or(axum::http::HeaderValue::from_static("image/jpeg")));
+                            return resp;
+                        }
                         return Redirect::permanent(&image_url_full).into_response();
                     }
                     let tpl = ImageOgTemplate {
