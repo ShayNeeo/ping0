@@ -18,7 +18,9 @@ use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 use askama::Template;
-use ping0::templates::{IndexTemplate, ResultTemplate, ImageOgTemplate, FileInfoTemplate, AdminLoginTemplate, AdminHomeTemplate, AdminItemsTemplate};
+use ping0::templates::{IndexTemplate, ResultTemplate, ImageOgTemplate, FileInfoTemplate, AdminLoginTemplate, AdminHomeTemplate, AdminItemsTemplate, AdminItem};
+use image::{imageops::FilterType, DynamicImage, ImageOutputFormat};
+use std::path::PathBuf;
 use sha2::{Digest, Sha256};
 use rand::{distributions::Alphanumeric, Rng};
 
@@ -38,12 +40,74 @@ const MAX_FILE_SIZE: usize = 1024 * 1024 * 1024;
 
 // Allowed file extensions for uploads
 const ALLOWED_EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "gif", "webp", "svg",
-    "pdf", "txt", "md", "csv", "json",
+    // images
+    "jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "avif", "svg",
+    // documents
+    "pdf", "txt", "md", "csv", "json", "rtf",
     "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    // archives
     "zip", "tar", "gz", "rar", "7z",
-    "mp3", "mp4", "mov", "webm"
+    // audio
+    "mp3", "wav", "flac", "ogg",
+    // video
+    "mp4", "mov", "webm", "avi", "mkv"
 ];
+
+const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "avif"];
+
+const TWO_MB: usize = 2 * 1024 * 1024;
+
+async fn ensure_dir(path: &str) {
+    let _ = fs::create_dir_all(path).await;
+}
+
+fn make_preview_filename(original_filename: &str) -> String {
+    let stem = StdPath::new(original_filename)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("preview");
+    format!("{}.jpg", stem)
+}
+
+fn is_image_ext(ext: &str) -> bool {
+    IMAGE_EXTENSIONS.iter().any(|e| e.eq_ignore_ascii_case(ext))
+}
+
+fn encode_jpeg_under_limit(img: &DynamicImage, max_bytes: usize) -> Option<Vec<u8>> {
+    // Try multiple qualities and downscales until under limit
+    let mut scales = vec![1.0, 0.85, 0.7, 0.55, 0.4];
+    let mut qualities = vec![85u8, 75, 65, 55, 45, 35];
+    let (w, h) = img.dimensions();
+    for scale in scales.drain(..) {
+        let target_w = (w as f32 * scale).max(1.0) as u32;
+        let target_h = (h as f32 * scale).max(1.0) as u32;
+        let resized = if target_w == w && target_h == h { img.clone() } else { img.resize(target_w, target_h, FilterType::Lanczos3) };
+        for q in &qualities {
+            let mut buf = Vec::with_capacity(256 * 1024);
+            let mut cursor = std::io::Cursor::new(&mut buf);
+            if resized.write_to(&mut cursor, ImageOutputFormat::Jpeg(*q)).is_ok() {
+                if buf.len() <= max_bytes {
+                    return Some(buf);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn try_generate_preview(original_path: &StdPath, preview_path: &StdPath) -> Result<(), String> {
+    let img = image::open(original_path).map_err(|e| format!("open image: {}", e))?;
+    match encode_jpeg_under_limit(&img, TWO_MB) {
+        Some(bytes) => std::fs::write(preview_path, &bytes).map_err(|e| format!("write preview: {}", e)),
+        None => {
+            // Fallback: write medium quality JPEG
+            let mut buf = Vec::new();
+            let mut cur = std::io::Cursor::new(&mut buf);
+            img.write_to(&mut cur, ImageOutputFormat::Jpeg(60)).map_err(|e| format!("encode jpeg: {}", e))?;
+            std::fs::write(preview_path, &buf).map_err(|e| format!("write preview: {}", e))
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct AppState { pub db_path: String, pub base_url: String }
@@ -274,9 +338,30 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
             let filename = value.strip_prefix("file:").unwrap_or(&value);
             if let Some(ext) = StdPath::new(filename).extension().and_then(|e| e.to_str()) {
                 let mime = mime_from_path(filename).first_or_octet_stream();
-                if ["jpg","jpeg","png","gif","webp","svg"].iter().any(|e| e.eq_ignore_ascii_case(ext)) {
-                    let image_url = format!("{}/files/{}", state.base_url, filename);
+                if is_image_ext(ext) || ext.eq_ignore_ascii_case("svg") {
                     let page_url = format!("{}/s/{}", state.base_url, code);
+                    let image_url_full = format!("{}/files/{}", state.base_url, filename);
+                    // Generate preview for raster images (skip svg)
+                    let og_image_url = if !ext.eq_ignore_ascii_case("svg") {
+                        let preview_dir = StdPath::new("uploads").join("previews");
+                        let preview_name = make_preview_filename(filename);
+                        let preview_fs_path = preview_dir.join(&preview_name);
+                        let preview_web_path = format!("previews/{}", preview_name);
+                        // Ensure dir exists and file generated if not present
+                        if !preview_fs_path.exists() {
+                            let _ = std::fs::create_dir_all(&preview_dir);
+                            let original_fs_path = StdPath::new("uploads").join(filename);
+                            let _ = try_generate_preview(&original_fs_path, &preview_fs_path);
+                        }
+                        if preview_fs_path.exists() {
+                            format!("{}/files/{}", state.base_url, preview_web_path)
+                        } else {
+                            image_url_full.clone()
+                        }
+                    } else {
+                        // For SVG use the original (usually tiny)
+                        image_url_full.clone()
+                    };
                     // Content negotiation: if the client wants HTML, return the OG preview page;
                     // otherwise (e.g., Markdown image fetch), redirect to the raw image.
                     let accept = headers
@@ -286,10 +371,11 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
                         .to_ascii_lowercase();
                     let wants_html = accept.contains("text/html");
                     if !wants_html {
-                        return Redirect::permanent(&image_url).into_response();
+                        return Redirect::permanent(&image_url_full).into_response();
                     }
                     let tpl = ImageOgTemplate {
-                        image_url,
+                        og_image_url: og_image_url,
+                        full_image_url: image_url_full,
                         page_url,
                         title: "Shared Image".to_string(),
                         description: "Shared via 0.id.vn".to_string(),
@@ -298,7 +384,8 @@ pub async fn short_handler(State(state): State<AppState>, Path(code): Path<Strin
                 }
                 let filename_display = StdPath::new(filename).file_name().and_then(|f| f.to_str()).unwrap_or(filename).to_string();
                 let file_url = format!("{}/files/{}", state.base_url, filename);
-                let tpl = FileInfoTemplate { filename: filename_display, file_url, mime: mime.to_string() };
+                let page_url = format!("{}/s/{}", state.base_url, code);
+                let tpl = FileInfoTemplate { filename: filename_display, file_url, mime: mime.to_string(), page_url };
                 return Html(tpl.render().unwrap_or_else(|_| "Template error".to_string())).into_response();
             }
             (StatusCode::NOT_FOUND, "File not found").into_response()
@@ -391,8 +478,16 @@ pub async fn admin_items(State(state): State<AppState>, cookie: Option<TypedHead
     let conn = Connection::open(&state.db_path).unwrap();
     let mut stmt = conn.prepare("SELECT code, kind, value, created_at FROM items ORDER BY created_at DESC LIMIT 500").unwrap();
     let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, i64>(3)?))).unwrap();
-    let mut items: Vec<(String, String, String, i64)> = Vec::new();
-    for row in rows { if let Ok(rec) = row { items.push(rec); } }
+    let mut items: Vec<AdminItem> = Vec::new();
+    for row in rows {
+        if let Ok((code, kind, value, created_at)) = row {
+            let mime = if kind == "file" {
+                value.strip_prefix("file:")
+                    .map(|fname| mime_from_path(fname).first_or_octet_stream().to_string())
+            } else { None };
+            items.push(AdminItem { code, kind, value, created_at, mime });
+        }
+    }
     Html(AdminItemsTemplate { items }.render().unwrap_or_else(|_| "Template error".to_string())).into_response()
 }
 
@@ -413,7 +508,11 @@ pub async fn admin_delete_item(
             if let Some(fname) = value.strip_prefix("file:") {
                 // We need a PathBuf to join
                 let path_to_delete = std::path::PathBuf::from("uploads").join(fname);
-                let _ = tokio::fs::remove_file(path_to_delete).await;
+                let _ = tokio::fs::remove_file(&path_to_delete).await;
+                // Also remove preview if exists
+                let preview_name = make_preview_filename(fname);
+                let preview_path = std::path::PathBuf::from("uploads").join("previews").join(preview_name);
+                let _ = tokio::fs::remove_file(preview_path).await;
             }
         }
     }

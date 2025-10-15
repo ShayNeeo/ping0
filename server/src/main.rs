@@ -91,7 +91,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/logout", post(handlers::admin_logout))
         .route("/admin", get(handlers::admin_home))
         .route("/admin/items", get(handlers::admin_items))
-        // .route("/admin/items/:code/delete", post(handlers::admin_delete_item)) // temporarily disabled
+        .route("/admin/items/:code/delete", post(handlers::admin_delete_item))
         .with_state(app_state)
         // CORS: allow requests from the frontend hosted on Cloudflare Pages (https://0.id.vn)
         // Adjust the allowed origin to your Pages domain(s) if different.

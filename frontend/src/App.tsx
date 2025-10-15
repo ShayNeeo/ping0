@@ -24,6 +24,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [fileInfo, setFileInfo] = useState<{ name: string; type: string; sizeKB: number } | null>(null)
 
   const fileRef = useRef<HTMLInputElement | null>(null)
 
@@ -44,8 +45,10 @@ export default function App() {
       if (file.type.startsWith('image/')) {
         const url = URL.createObjectURL(file)
         setImagePreview(url)
+        setFileInfo({ name: file.name, type: file.type || guessMimeFromName(file.name), sizeKB: Math.round(file.size / 102.4) / 10 })
       } else {
         setImagePreview(null)
+        setFileInfo({ name: file.name, type: file.type || guessMimeFromName(file.name), sizeKB: Math.round(file.size / 102.4) / 10 })
       }
     }
   }
@@ -163,6 +166,13 @@ export default function App() {
               <img src={imagePreview} alt="preview" />
             </div>
           )}
+          {!imagePreview && fileInfo && (
+            <div className="file-preview">
+              <div><strong>Name:</strong> {fileInfo.name}</div>
+              <div><strong>Type:</strong> {fileInfo.type || 'unknown'}</div>
+              <div><strong>Size:</strong> {fileInfo.sizeKB} KB</div>
+            </div>
+          )}
 
           <label className="checkbox">
             <input
@@ -212,4 +222,31 @@ function toAbsoluteUrl(u: string) {
   } catch {
     return u
   }
+}
+
+function guessMimeFromName(name: string) {
+  const lower = name.toLowerCase()
+  if (/(\.png)$/.test(lower)) return 'image/png'
+  if (/(\.jpe?g)$/.test(lower)) return 'image/jpeg'
+  if (/(\.gif)$/.test(lower)) return 'image/gif'
+  if (/(\.webp)$/.test(lower)) return 'image/webp'
+  if (/(\.svg)$/.test(lower)) return 'image/svg+xml'
+  if (/(\.pdf)$/.test(lower)) return 'application/pdf'
+  if (/(\.txt)$/.test(lower)) return 'text/plain'
+  if (/(\.md)$/.test(lower)) return 'text/markdown'
+  if (/(\.csv)$/.test(lower)) return 'text/csv'
+  if (/(\.json)$/.test(lower)) return 'application/json'
+  if (/(\.zip)$/.test(lower)) return 'application/zip'
+  if (/(\.tar)$/.test(lower)) return 'application/x-tar'
+  if (/(\.gz)$/.test(lower)) return 'application/gzip'
+  if (/(\.rar)$/.test(lower)) return 'application/vnd.rar'
+  if (/(\.7z)$/.test(lower)) return 'application/x-7z-compressed'
+  if (/(\.mp3)$/.test(lower)) return 'audio/mpeg'
+  if (/(\.wav)$/.test(lower)) return 'audio/wav'
+  if (/(\.flac)$/.test(lower)) return 'audio/flac'
+  if (/(\.ogg)$/.test(lower)) return 'audio/ogg'
+  if (/(\.mp4)$/.test(lower)) return 'video/mp4'
+  if (/(\.mov)$/.test(lower)) return 'video/quicktime'
+  if (/(\.webm)$/.test(lower)) return 'video/webm'
+  return ''
 }
