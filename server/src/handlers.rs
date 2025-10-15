@@ -23,8 +23,7 @@ use image::{imageops::FilterType, DynamicImage, ImageOutputFormat, GenericImageV
 use sha2::{Digest, Sha256};
 use rand::{distributions::Alphanumeric, Rng};
 
-#[derive(Deserialize)]
-pub struct CodeParams { pub code: String }
+// Removed CodeParams; using Path<String> directly for routes with one :code param
 
 // Utility to extract the admin cookie token
 fn extract_admin_token(cookie: Option<TypedHeader<Cookie>>) -> Option<String> {
@@ -75,7 +74,7 @@ fn is_image_ext(ext: &str) -> bool {
 fn encode_jpeg_under_limit(img: &DynamicImage, max_bytes: usize) -> Option<Vec<u8>> {
     // Try multiple qualities and downscales until under limit
     let mut scales = vec![1.0, 0.85, 0.7, 0.55, 0.4];
-    let mut qualities = vec![85u8, 75, 65, 55, 45, 35];
+    let qualities = vec![85u8, 75, 65, 55, 45, 35];
     let (w, h) = img.dimensions();
     for scale in scales.drain(..) {
         let target_w = (w as f32 * scale).max(1.0) as u32;
@@ -494,7 +493,7 @@ pub async fn admin_items(State(state): State<AppState>, cookie: Option<TypedHead
 #[debug_handler]
 pub async fn admin_delete_item(
     State(state): State<AppState>,
-    Path(CodeParams { code }): Path<CodeParams>,
+    Path(code): Path<String>,
     cookie: Option<TypedHeader<Cookie>>,
 ) -> impl IntoResponse {
     if !require_admin_token(&state.db_path, extract_admin_token(cookie).as_deref()).await {
