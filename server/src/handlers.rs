@@ -55,9 +55,7 @@ const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp", 
 
 const TWO_MB: usize = 2 * 1024 * 1024;
 
-async fn ensure_dir(path: &str) {
-    let _ = fs::create_dir_all(path).await;
-}
+// ensure_dir was unused; removed to avoid dead_code warning
 
 fn make_preview_filename(original_filename: &str) -> String {
     let stem = StdPath::new(original_filename)
