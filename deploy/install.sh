@@ -219,7 +219,8 @@ write_env_file() {
   sudo tee "$ENV_FILE" > /dev/null <<ENVV
 HOST=0.0.0.0
 PORT=$APP_PORT
-BASE_URL=https://0.id.vn
+# Point all server-generated links (including /files) to the API domain to bypass CF Pages
+BASE_URL=https://$API_DOMAIN
 DATABASE_PATH=$DATA_DIR/ping0.db
 ENVV
 }
