@@ -78,6 +78,8 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/health", get(health_check))
+        // CORS preflight: explicitly handle OPTIONS on API endpoints
+        .route("/api/upload", axum::routing::options(handlers::cors_preflight))
         .route("/", get(handlers::index_handler))
         .route("/submit", post(handlers::submit_handler))
         .route("/upload", post(handlers::upload_handler))
@@ -100,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
                 .allow_origin(Any)
                 .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
                 .allow_headers(Any)
+                .expose_headers(Any)
         )
         // Raise max request body size to 1 GiB
         .layer(RequestBodyLimitLayer::new(1024 * 1024 * 1024))

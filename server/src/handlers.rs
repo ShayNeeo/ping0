@@ -22,6 +22,10 @@ use ping0::templates::{IndexTemplate, ResultTemplate, ImageOgTemplate, FileInfoT
 use image::{imageops::FilterType, DynamicImage, ImageOutputFormat, GenericImageView};
 use sha2::{Digest, Sha256};
 use rand::{distributions::Alphanumeric, Rng};
+pub async fn cors_preflight() -> impl IntoResponse {
+    // Let CorsLayer attach the appropriate headers; return 204 No Content
+    (StatusCode::NO_CONTENT, ())
+}
 
 // Removed CodeParams; using Path<String> directly for routes with one :code param
 
