@@ -95,8 +95,9 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/items", get(handlers::admin_items))
         .route("/admin/items/:code/delete", post(handlers::admin_delete_item))
         .with_state(app_state)
-        // CORS: allow requests from the frontend hosted on Cloudflare Pages (https://0.id.vn)
-        // Adjust the allowed origin to your Pages domain(s) if different.
+        // Raise max request body size to 1 GiB (inner layer)
+        .layer(RequestBodyLimitLayer::new(1024 * 1024 * 1024))
+        // CORS (outer layer) so even inner rejections (like 413) get CORS headers
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)
@@ -104,8 +105,6 @@ async fn main() -> anyhow::Result<()> {
                 .allow_headers(Any)
                 .expose_headers(Any)
         )
-        // Raise max request body size to 1 GiB
-        .layer(RequestBodyLimitLayer::new(1024 * 1024 * 1024))
         .nest_service("/files", get_service(ServeDir::new("uploads")).handle_error(|_| async { (StatusCode::INTERNAL_SERVER_ERROR, "IO Error") }));
 
     let addr: SocketAddr = format!("{}:{}", host, port).parse()?;
