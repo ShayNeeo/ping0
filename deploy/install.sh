@@ -280,18 +280,18 @@ if is_enabled "$NGINX_ENABLE"; then
     echo "Using Let's Encrypt cert at $TLS_CERT_PATH"
   fi
 
-  echo "Generating nginx site config for $NGINX_SERVER_NAME"
+  echo "Generating nginx site config for $API_DOMAIN"
   sudo tee "$NGINX_SITE_PATH" > /dev/null <<NGX
 server {
     listen 80;
-    server_name ${NGINX_SERVER_NAME};
+    server_name ${API_DOMAIN};
     return 301 https://\$host\$request_uri;
 }
 
 server {
     listen 443 ssl;
     http2 on;
-    server_name ${NGINX_SERVER_NAME};
+    server_name ${API_DOMAIN};
 
     ssl_certificate $TLS_CERT_PATH;
     ssl_certificate_key $TLS_KEY_PATH;
@@ -319,7 +319,7 @@ NGX
   sudo ln -sf "$NGINX_SITE_PATH" "/etc/nginx/sites-enabled/$SERVICE_NAME"
 
   if [[ "$TLS_CERT_PATH" == *"letsencrypt"* ]]; then
-    echo "Let's Encrypt cert configured for ${NGINX_SERVER_NAME}"
+    echo "Let's Encrypt cert configured for ${API_DOMAIN}"
   else
     echo "Warning: Using fallback TLS at $TLS_CERT_PATH. Consider enabling CERTBOT or placing Cloudflare Origin certs." >&2
   fi
@@ -399,9 +399,9 @@ else
   echo "Systemd unit:      disabled (set SYSTEMD_ENABLE=1 to enable)"
 fi
 if is_enabled "$NGINX_ENABLE"; then
-  echo "Nginx site:        $NGINX_SITE_PATH (server_name: $NGINX_SERVER_NAME)"
-  echo "TLS cert path:     $CF_SSL_DIR/${NGINX_SERVER_NAME}.crt"
-  echo "TLS key path:      $CF_SSL_DIR/${NGINX_SERVER_NAME}.key"
+  echo "Nginx site:        $NGINX_SITE_PATH (server_name: $API_DOMAIN)"
+  echo "TLS cert path:     $TLS_CERT_PATH"
+  echo "TLS key path:      $TLS_KEY_PATH"
 else
   echo "Nginx:             disabled (set NGINX_ENABLE=1 to enable)"
 fi
