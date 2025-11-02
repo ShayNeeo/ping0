@@ -32,6 +32,8 @@ ENV_OVERWRITE=${ENV_OVERWRITE:-1}
 
 # API/TLS settings
 API_DOMAIN=${API_DOMAIN:-$NGINX_SERVER_NAME}
+# The public domain for short links (can differ from API_DOMAIN if behind reverse proxy)
+BASE_URL=${BASE_URL:-https://$API_DOMAIN}
 # Whether the API DNS is proxied behind Cloudflare (orange cloud)
 # If enabled and CERTBOT is enabled, we will use DNS-01 with Cloudflare.
 PROXIED_API=${PROXIED_API:-0}
@@ -219,8 +221,7 @@ write_env_file() {
   sudo tee "$ENV_FILE" > /dev/null <<ENVV
 HOST=0.0.0.0
 PORT=$APP_PORT
-# Point all server-generated links (including /files) to the API domain to bypass CF Pages
-BASE_URL=https://$API_DOMAIN
+BASE_URL=$BASE_URL
 DATABASE_PATH=$DATA_DIR/ping0.db
 ENVV
 }
