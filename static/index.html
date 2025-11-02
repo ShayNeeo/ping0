@@ -160,7 +160,7 @@
         <div class="section">
             <h2>📤 Upload File</h2>
             <form id="uploadForm">
-                <label for="fileInput">Choose an image or file (max 10MB)</label>
+                <label for="fileInput">Choose an image or file (max 1GB)</label>
                 <input type="file" id="fileInput" name="file" accept="image/*,.pdf,.txt" required>
                 <button type="submit">Upload & Generate QR</button>
             </form>
@@ -221,8 +221,8 @@
             const formData = new FormData(uploadForm);
             const file = formData.get('file');
 
-            if (file.size > 10 * 1024 * 1024) {
-                showResult('<strong>Error:</strong> File too large. Maximum size is 10MB.', true);
+            if (file.size > 1024 * 1024 * 1024) {
+                showResult('<strong>Error:</strong> File too large. Maximum size is 1GB.', true);
                 return;
             }
 

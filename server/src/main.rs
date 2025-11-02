@@ -5,6 +5,7 @@ use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
 use tower_http::cors::{CorsLayer, Any};
 use tower_http::limit::RequestBodyLimitLayer;
+use tower_http::limit::DefaultBodyLimit;
 use axum::http::Method;
 use axum::routing::get_service;
 use axum::http::StatusCode;
@@ -95,6 +96,8 @@ async fn main() -> anyhow::Result<()> {
         .route("/admin/items", get(handlers::admin_items))
         .route("/admin/items/:code/delete", post(handlers::admin_delete_item))
         .with_state(app_state)
+        // Set individual field limit to 1 GiB for multipart uploads
+        .layer(DefaultBodyLimit::max(1024 * 1024 * 1024))
         // Raise max request body size to 1 GiB (inner layer)
         .layer(RequestBodyLimitLayer::new(1024 * 1024 * 1024))
         // CORS (outer layer) so even inner rejections (like 413) get CORS headers
