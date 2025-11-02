@@ -76,35 +76,78 @@ fn is_image_ext(ext: &str) -> bool {
 
 fn encode_jpeg_under_limit(img: &DynamicImage, max_bytes: usize) -> Option<Vec<u8>> {
     // Try multiple qualities and downscales until under limit
-    let mut scales = vec![1.0, 0.85, 0.7, 0.55, 0.4];
-    let qualities = vec![85u8, 75, 65, 55, 45, 35];
+    // For very large images (>20MB), be more aggressive with scaling and quality reduction
+    let mut scales = vec![1.0, 0.9, 0.75, 0.6, 0.5, 0.4, 0.3, 0.25, 0.2, 0.15, 0.1];
+    let qualities = vec![85u8, 75, 65, 55, 45, 35, 25, 15];
+    
     let (w, h) = img.dimensions();
+    
     for scale in scales.drain(..) {
         let target_w = (w as f32 * scale).max(1.0) as u32;
         let target_h = (h as f32 * scale).max(1.0) as u32;
-        let resized = if target_w == w && target_h == h { img.clone() } else { img.resize(target_w, target_h, FilterType::Lanczos3) };
+        let resized = if target_w == w && target_h == h { 
+            img.clone() 
+        } else { 
+            img.resize(target_w, target_h, FilterType::Lanczos3) 
+        };
+        
         for q in &qualities {
-            let mut buf = Vec::with_capacity(256 * 1024);
+            let mut buf = Vec::with_capacity(512 * 1024);
             let mut cursor = std::io::Cursor::new(&mut buf);
             if resized.write_to(&mut cursor, ImageOutputFormat::Jpeg(*q)).is_ok() {
                 if buf.len() <= max_bytes {
+                    tracing::info!("Preview compressed: scale={}, quality={}, size={}KB", scale, q, buf.len() / 1024);
                     return Some(buf);
                 }
             }
         }
     }
+    
+    tracing::warn!("Could not compress image under {}MB limit", max_bytes / 1024 / 1024);
     None
 }
 
 fn try_generate_preview(original_path: &StdPath, preview_path: &StdPath) -> Result<(), String> {
     let img = image::open(original_path).map_err(|e| format!("open image: {}", e))?;
     match encode_jpeg_under_limit(&img, PREVIEW_MAX_BYTES) {
-        Some(bytes) => std::fs::write(preview_path, &bytes).map_err(|e| format!("write preview: {}", e)),
+        Some(bytes) => {
+            std::fs::write(preview_path, &bytes).map_err(|e| format!("write preview: {}", e))
+        }
         None => {
-            // Fallback: write medium quality JPEG
+            // Fallback: For very large images, aggressively scale down first
+            let (w, h) = img.dimensions();
+            let pixel_count = (w as u64) * (h as u64);
+            let max_pixels = 1920u64 * 1080u64;  // Max ~2MP (1920x1080)
+            
+            let fallback_img = if pixel_count > max_pixels {
+                let scale = ((max_pixels as f32) / (pixel_count as f32)).sqrt();
+                let new_w = (w as f32 * scale).max(1.0) as u32;
+                let new_h = (h as f32 * scale).max(1.0) as u32;
+                tracing::warn!("Extreme fallback: scaling {}x{} to {}x{}", w, h, new_w, new_h);
+                img.resize(new_w, new_h, FilterType::Lanczos3)
+            } else {
+                img.clone()
+            };
+            
+            // Try to write at very low quality
             let mut buf = Vec::new();
             let mut cur = std::io::Cursor::new(&mut buf);
-            img.write_to(&mut cur, ImageOutputFormat::Jpeg(60)).map_err(|e| format!("encode jpeg: {}", e))?;
+            for quality in [45u8, 35, 25, 15] {
+                buf.clear();
+                cur = std::io::Cursor::new(&mut buf);
+                if fallback_img.write_to(&mut cur, ImageOutputFormat::Jpeg(quality)).is_ok() {
+                    if buf.len() <= PREVIEW_MAX_BYTES {
+                        tracing::warn!("Fallback succeeded at quality={}, size={}KB", quality, buf.len() / 1024);
+                        return std::fs::write(preview_path, &buf).map_err(|e| format!("write preview: {}", e));
+                    }
+                }
+            }
+            
+            // Last resort: use absolute minimum
+            buf.clear();
+            cur = std::io::Cursor::new(&mut buf);
+            fallback_img.write_to(&mut cur, ImageOutputFormat::Jpeg(10)).map_err(|e| format!("encode jpeg: {}", e))?;
+            tracing::warn!("Last resort fallback: quality=10, size={}KB", buf.len() / 1024);
             std::fs::write(preview_path, &buf).map_err(|e| format!("write preview: {}", e))
         }
     }
