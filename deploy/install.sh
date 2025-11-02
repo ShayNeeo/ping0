@@ -34,6 +34,10 @@ ENV_OVERWRITE=${ENV_OVERWRITE:-1}
 API_DOMAIN=${API_DOMAIN:-$NGINX_SERVER_NAME}
 # The public domain for short links (can differ from API_DOMAIN if behind reverse proxy)
 BASE_URL=${BASE_URL:-https://$API_DOMAIN}
+# Ensure BASE_URL has a protocol
+if [[ ! "$BASE_URL" =~ ^https?:// ]]; then
+  BASE_URL="https://$BASE_URL"
+fi
 # Whether the API DNS is proxied behind Cloudflare (orange cloud)
 # If enabled and CERTBOT is enabled, we will use DNS-01 with Cloudflare.
 PROXIED_API=${PROXIED_API:-0}
