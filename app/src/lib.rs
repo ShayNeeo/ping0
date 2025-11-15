@@ -28,7 +28,7 @@ pub async fn upload_file(file: Vec<u8>, filename: String) -> Result<UploadRespon
     let path = format!("uploads/{}", filename_saved);
     fs::create_dir_all("uploads").await.map_err(|e| ServerFnError::ServerError(e.to_string()))?;
     fs::write(&path, &file).await.map_err(|e| ServerFnError::ServerError(e.to_string()))?;
-    let link = format!("https://0.id.vn/files/{}", filename_saved);
+    let link = format!("https://w9.se/files/{}", filename_saved);
     let code = QrCode::new(link.as_bytes()).map_err(|e| ServerFnError::ServerError(e.to_string()))?;
     let svg = code.render::<qrcode::render::svg::Color>().min_dimensions(200,200).build();
     Ok(UploadResponse {

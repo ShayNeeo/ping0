@@ -8,7 +8,7 @@ services:
     environment:
       - PORT=8080
       - HOST=0.0.0.0
-      - BASE_URL=https://0.id.vn
+      - BASE_URL=https://w9.se
       - RUST_LOG=info
     volumes:
       # Persist uploaded files

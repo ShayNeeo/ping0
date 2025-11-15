@@ -54,13 +54,13 @@ cargo build --release
 
 1. **Share a URL**: Paste any URL in the form and click "Create"
 2. **Upload a File**: Drag & drop or select a file to upload
-3. **Get Short Link**: Copy the generated short URL (e.g., `https://0.id.vn/s/abc123`)
+3. **Get Short Link**: Copy the generated short URL (e.g., `https://w9.se/s/abc123`)
 4. **Optional QR**: Check "Generate QR Code" for mobile sharing
 
 ### Example
 
 - Original: `https://example.com/very-long-url-with-many-parameters`
-- Short: `https://0.id.vn/s/abc123` (with QR code for mobile)
+- Short: `https://w9.se/s/abc123` (with QR code for mobile)
 
 ## 🏗️ Architecture
 
@@ -111,4 +111,4 @@ This project is licensed under the GNUv3 License - see the [LICENSE](LICENSE) fi
 
 ---
 
-**Made with ❤️ in Rust** • [Report Issues](https://github.com/ShayNeeo/ping0/issues) • [View Demo](https://0.id.vn)
+**Made with ❤️ in Rust** • [Report Issues](https://github.com/ShayNeeo/ping0/issues) • [View Demo](https://w9.se)

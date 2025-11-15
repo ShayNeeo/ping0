@@ -31,7 +31,7 @@ npm run build
 - Project settings:
   - Build command: `npm run build`
   - Output directory: `dist`
-- Environment variable: set `VITE_API_BASE_URL` to your backend API URL, e.g., `https://api.0.id.vn`.
+- Environment variable: set `VITE_API_BASE_URL` to your backend API URL, e.g., `https://api.w9.se`.
 
 ## Notes
 - The app calls `POST /api/upload` on the backend with `multipart/form-data` containing:

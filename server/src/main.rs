@@ -41,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
     let base_url = std::env::var("BASE_URL")
         .ok()
         .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| format!("https://0.id.vn"));
+        .unwrap_or_else(|| format!("https://w9.se"));
     
     tracing::info!("Base URL: {}", base_url);
 
@@ -73,7 +73,7 @@ async fn main() -> anyhow::Result<()> {
     let base_url = std::env::var("BASE_URL")
         .ok()
         .filter(|v| !v.trim().is_empty())
-        .unwrap_or_else(|| format!("https://0.id.vn"));
+        .unwrap_or_else(|| format!("https://w9.se"));
 
     let app_state = handlers::AppState { db_path: db_path.clone(), base_url: base_url.clone() };
 
